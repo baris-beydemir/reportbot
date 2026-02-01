@@ -1,7 +1,7 @@
 """Tests for Maps scraper with direct URL navigation."""
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
-from src.maps_scraper import MapsScraper
+from src.maps_scraper import MapsScraper, is_turkey_location
 from src.models import Business
 
 
@@ -203,3 +203,69 @@ class TestGetReviewsFromDirectUrl:
         scraper._click_yorumlar_tab.assert_not_called()
         # But should have called _sort_by_lowest_rating
         scraper._sort_by_lowest_rating.assert_called_once()
+
+
+class TestIsTurkeyLocation:
+    """Tests for is_turkey_location function that checks if an address is in Turkey."""
+    
+    def test_returns_true_for_turkiye_in_address(self):
+        """Should return True when address contains 'Türkiye'."""
+        address = "Cankurtaran, Kennedy Cd. No:1, 34122 Fatih/İstanbul, Türkiye"
+        assert is_turkey_location(address) is True
+    
+    def test_returns_true_for_turkey_in_address(self):
+        """Should return True when address contains 'Turkey'."""
+        address = "Cankurtaran, Kennedy Cd. No:1, 34122 Fatih/Istanbul, Turkey"
+        assert is_turkey_location(address) is True
+    
+    def test_returns_true_for_lowercase_turkey(self):
+        """Should return True when address contains 'turkey' in lowercase."""
+        address = "Istiklal Street, Istanbul, turkey"
+        assert is_turkey_location(address) is True
+    
+    def test_returns_true_for_lowercase_turkiye(self):
+        """Should return True when address contains 'türkiye' in lowercase."""
+        address = "Cankurtaran Mah., 34122 Fatih/İstanbul, türkiye"
+        assert is_turkey_location(address) is True
+    
+    def test_returns_false_for_foreign_address(self):
+        """Should return False when address is from another country."""
+        address = "123 Main Street, New York, NY 10001, United States"
+        assert is_turkey_location(address) is False
+    
+    def test_returns_false_for_germany_address(self):
+        """Should return False when address is from Germany."""
+        address = "Friedrichstraße 123, 10117 Berlin, Germany"
+        assert is_turkey_location(address) is False
+    
+    def test_returns_false_for_greece_address(self):
+        """Should return False when address is from Greece."""
+        address = "Monastiraki Square, Athens 105 55, Greece"
+        assert is_turkey_location(address) is False
+    
+    def test_returns_false_for_none_address(self):
+        """Should return False when address is None."""
+        assert is_turkey_location(None) is False
+    
+    def test_returns_false_for_empty_address(self):
+        """Should return False when address is empty string."""
+        assert is_turkey_location("") is False
+    
+    def test_returns_false_for_whitespace_address(self):
+        """Should return False when address is only whitespace."""
+        assert is_turkey_location("   ") is False
+    
+    def test_returns_true_for_istanbul_without_country(self):
+        """Should return True when address contains İstanbul."""
+        address = "Cankurtaran Mah., Fatih/İstanbul"
+        assert is_turkey_location(address) is True
+    
+    def test_returns_true_for_ankara_without_country(self):
+        """Should return True when address contains Ankara."""
+        address = "Kızılay, Çankaya/Ankara"
+        assert is_turkey_location(address) is True
+    
+    def test_returns_true_for_izmir_without_country(self):
+        """Should return True when address contains İzmir."""
+        address = "Alsancak, Konak/İzmir"
+        assert is_turkey_location(address) is True

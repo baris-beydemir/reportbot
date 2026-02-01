@@ -6,7 +6,7 @@ import os
 import sys
 from pathlib import Path
 
-from src.maps_scraper import MapsScraper
+from src.maps_scraper import MapsScraper, is_turkey_location
 from src.report_filler import ReportFiller
 from src.review_finder import (
     find_lowest_rated_review,
@@ -378,6 +378,12 @@ async def run_bot(
         if business.address:
             print(f"  Address: {business.address}")
         print(f"  URL: {business.maps_url}")
+        
+        # Check if business is in Turkey
+        if not is_turkey_location(business.address):
+            print(f"\n❌ Couldn't do abroad operations - Business is not located in Turkey")
+            print(f"   Address: {business.address}")
+            return (False, None, [], business)
         
         # Step 2: Get reviews (WITHOUT share links - much faster!)
         print(f"\n[2/5] Fetching reviews (max {max_reviews})...")

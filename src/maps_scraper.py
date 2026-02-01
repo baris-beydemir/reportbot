@@ -7,6 +7,72 @@ from playwright.async_api import async_playwright, Page, Browser, TimeoutError a
 from src.models import Review, Business
 
 
+# Turkish city names (all 81 provinces) for location detection
+TURKEY_CITIES = {
+    "istanbul", "İstanbul", "ankara", "Ankara", "izmir", "İzmir",
+    "bursa", "Bursa", "antalya", "Antalya", "adana", "Adana",
+    "konya", "Konya", "gaziantep", "Gaziantep", "mersin", "Mersin",
+    "diyarbakır", "Diyarbakır", "kayseri", "Kayseri", "eskişehir", "Eskişehir",
+    "samsun", "Samsun", "trabzon", "Trabzon", "denizli", "Denizli",
+    "malatya", "Malatya", "erzurum", "Erzurum", "van", "Van",
+    "batman", "Batman", "şanlıurfa", "Şanlıurfa", "elazığ", "Elazığ",
+    "sakarya", "Sakarya", "kocaeli", "Kocaeli", "aydın", "Aydın",
+    "muğla", "Muğla", "tekirdağ", "Tekirdağ", "manisa", "Manisa",
+    "hatay", "Hatay", "balıkesir", "Balıkesir", "mardin", "Mardin",
+    "kahramanmaraş", "Kahramanmaraş", "afyonkarahisar", "Afyonkarahisar",
+    "sivas", "Sivas", "kütahya", "Kütahya", "çorum", "Çorum",
+    "tokat", "Tokat", "çanakkale", "Çanakkale", "rize", "Rize",
+    "ordu", "Ordu", "edirne", "Edirne", "düzce", "Düzce",
+    "isparta", "Isparta", "giresun", "Giresun", "aksaray", "Aksaray",
+    "yozgat", "Yozgat", "nevşehir", "Nevşehir", "niğde", "Niğde",
+    "kırıkkale", "Kırıkkale", "bolu", "Bolu", "karabük", "Karabük",
+    "kırşehir", "Kırşehir", "burdur", "Burdur", "ağrı", "Ağrı",
+    "amasya", "Amasya", "artvin", "Artvin", "bartın", "Bartın",
+    "bayburt", "Bayburt", "bilecik", "Bilecik", "bingöl", "Bingöl",
+    "bitlis", "Bitlis", "çankırı", "Çankırı", "erzincan", "Erzincan",
+    "gümüşhane", "Gümüşhane", "hakkari", "Hakkari", "iğdır", "Iğdır",
+    "kars", "Kars", "kastamonu", "Kastamonu", "kilis", "Kilis",
+    "muş", "Muş", "osmaniye", "Osmaniye", "siirt", "Siirt",
+    "sinop", "Sinop", "şırnak", "Şırnak", "tunceli", "Tunceli",
+    "uşak", "Uşak", "yalova", "Yalova", "zonguldak", "Zonguldak",
+    "ardahan", "Ardahan",
+}
+
+
+def is_turkey_location(address: Optional[str]) -> bool:
+    """
+    Check if the given address is located in Turkey.
+    
+    Uses multiple indicators to determine if the address is in Turkey:
+    1. Contains 'Türkiye' or 'Turkey'
+    2. Contains Turkish city names
+    
+    Note: We don't rely on postal codes alone since they can overlap with 
+    other countries (e.g., US zip codes like 10001).
+    
+    Args:
+        address: The address string to check.
+        
+    Returns:
+        True if the address is in Turkey, False otherwise.
+    """
+    if not address or not address.strip():
+        return False
+    
+    address_lower = address.lower()
+    
+    # Check for explicit country name
+    if "türkiye" in address_lower or "turkey" in address_lower:
+        return True
+    
+    # Check for Turkish city names (case-insensitive)
+    for city in TURKEY_CITIES:
+        if city.lower() in address_lower:
+            return True
+    
+    return False
+
+
 class MapsScraper:
     """Scraper for Google Maps reviews."""
     
