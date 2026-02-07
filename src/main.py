@@ -19,7 +19,161 @@ from src.excel_handler import (
     update_excel_with_report,
     convert_csv_to_excel,
     get_reported_reviews_for_business,
+    get_pending_reviews,
+    update_review_status,
 )
+
+
+async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dict:
+    """
+    Verify all pending reviews and update their status if they've been deleted.
+    
+    Goes through all reviews with 'beklemede' status, visits each review URL,
+    and checks if the comment still exists. If not found, marks as 'silindi'.
+    
+    Args:
+        excel_path: Path to the Excel file.
+        headless: Whether to run browser in headless mode.
+        
+    Returns:
+        Dictionary with verification results:
+        - total: Total number of pending reviews checked
+        - deleted: Number of reviews marked as deleted
+        - still_active: Number of reviews still active
+        - errors: Number of reviews that couldn't be verified
+    """
+    from playwright.async_api import async_playwright
+    
+    # Get all pending reviews
+    pending_reviews = get_pending_reviews(excel_path)
+    
+    if not pending_reviews:
+        print("\n📋 Beklemede durumunda yorum bulunamadı.")
+        return {'total': 0, 'deleted': 0, 'still_active': 0, 'errors': 0}
+    
+    print(f"\n{'='*60}")
+    print(f"🔍 YORUM DOĞRULAMA - Beklemedeki yorumlar kontrol ediliyor")
+    print(f"{'='*60}")
+    print(f"   Toplam beklemedeki yorum: {len(pending_reviews)}")
+    
+    results = {
+        'total': len(pending_reviews),
+        'deleted': 0,
+        'still_active': 0,
+        'errors': 0
+    }
+    
+    # Start browser for verification
+    playwright = await async_playwright().start()
+    browser = await playwright.chromium.launch(
+        headless=headless,
+        args=['--disable-blink-features=AutomationControlled']
+    )
+    context = await browser.new_context(
+        viewport={"width": 1280, "height": 800},
+        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        locale="tr-TR"
+    )
+    page = await context.new_page()
+    
+    try:
+        for i, review in enumerate(pending_reviews, 1):
+            review_url = review['review_url']
+            reviewer_name = review['reviewer_name']
+            review_text = review['review_text']
+            row_idx = review['row_idx']
+            
+            print(f"\n  [{i}/{len(pending_reviews)}] Kontrol ediliyor:")
+            print(f"      Yorumcu: {reviewer_name}")
+            print(f"      URL: {review_url[:60]}...")
+            
+            try:
+                # Navigate to the review URL
+                await page.goto(review_url, wait_until="domcontentloaded", timeout=30000)
+                await asyncio.sleep(3)  # Wait for page to load
+                
+                # Get page content for checking
+                page_content = await page.content()
+                page_text = await page.evaluate("() => document.body.innerText")
+                
+                # Check for "Dynamic Link Not Found" or similar error messages
+                error_indicators = [
+                    "Dynamic Link Not Found",
+                    "dynamic link not found",
+                    "Dinamik Bağlantı Bulunamadı",
+                    "Link not found",
+                    "Bağlantı bulunamadı",
+                    "Page not found",
+                    "Sayfa bulunamadı",
+                    "This page isn't available",
+                    "Bu sayfa mevcut değil",
+                ]
+                
+                is_deleted = False
+                
+                # Check 1: Look for error messages indicating the link is not found
+                for error_text in error_indicators:
+                    if error_text.lower() in page_text.lower():
+                        print(f"      ❌ Hata mesajı bulundu: '{error_text}'")
+                        is_deleted = True
+                        break
+                
+                # Check 2: If no error message, verify reviewer name and first 3 words of comment
+                if not is_deleted:
+                    # Check if reviewer name exists on page
+                    reviewer_found = reviewer_name.lower() in page_text.lower()
+                    
+                    # Get first 3 words of the review text
+                    words = review_text.split()[:3]
+                    first_3_words = ' '.join(words) if words else ''
+                    
+                    # Check if first 3 words exist on page
+                    words_found = first_3_words.lower() in page_text.lower() if first_3_words else True
+                    
+                    if not reviewer_found and not words_found:
+                        print(f"      ❌ Yorumcu adı bulunamadı: '{reviewer_name}'")
+                        if first_3_words:
+                            print(f"      ❌ Yorum metninin ilk 3 kelimesi bulunamadı: '{first_3_words}'")
+                        is_deleted = True
+                    else:
+                        if reviewer_found:
+                            print(f"      ✓ Yorumcu adı bulundu: '{reviewer_name}'")
+                        if words_found and first_3_words:
+                            print(f"      ✓ Yorum metni doğrulandı: '{first_3_words}...'")
+                
+                # Update status if deleted
+                if is_deleted:
+                    print(f"      → Durum 'silindi' olarak güncelleniyor...")
+                    if update_review_status(excel_path, row_idx, 'silindi'):
+                        results['deleted'] += 1
+                        print(f"      ✅ Güncellendi!")
+                    else:
+                        results['errors'] += 1
+                        print(f"      ⚠️ Güncelleme başarısız!")
+                else:
+                    results['still_active'] += 1
+                    print(f"      ✓ Yorum hala aktif")
+                    
+            except Exception as e:
+                print(f"      ⚠️ Kontrol hatası: {e}")
+                results['errors'] += 1
+                continue
+                
+    finally:
+        await browser.close()
+        await playwright.stop()
+    
+    # Print summary
+    print(f"\n{'='*60}")
+    print(f"📊 YORUM DOĞRULAMA SONUÇLARI")
+    print(f"{'='*60}")
+    print(f"   Toplam kontrol edilen: {results['total']}")
+    print(f"   ✅ Hala aktif: {results['still_active']}")
+    print(f"   ❌ Silindi olarak işaretlenen: {results['deleted']}")
+    print(f"   ⚠️ Hata: {results['errors']}")
+    print(f"{'='*60}\n")
+    
+    return results
 
 
 def update_csv_with_report_id(
@@ -651,8 +805,12 @@ Examples:
                 file_type = "CSV"
             
             if not urls_to_process:
-                print(f"❌ No URLs found in {file_type} file: {args.csv}")
-                sys.exit(1)
+                print(f"📄 No new URLs to process in {file_type} file: {args.csv}")
+                # Even if no new URLs, run verification for existing pending reviews
+                if file_ext == '.xlsx':
+                    print("\n→ Mevcut beklemedeki yorumlar kontrol ediliyor...")
+                    asyncio.run(verify_pending_reviews(args.csv, headless=args.headless if hasattr(args, 'headless') else False))
+                sys.exit(0)
             total_reviews = sum(count for _, count in urls_to_process)
             print(f"📄 Loaded {len(urls_to_process)} URLs from {args.csv} ({file_type})")
             print(f"   Toplam raporlanacak yorum sayısı: {total_reviews}")
@@ -724,6 +882,11 @@ Examples:
                 print(f"  {url[:40]}... ({review_count} reviews) -> {status}")
             print(f"{'='*60}\n")
             
+            # Run verification step for pending reviews (Excel only)
+            file_ext = Path(args.csv).suffix.lower()
+            if file_ext == '.xlsx':
+                asyncio.run(verify_pending_reviews(args.csv, headless=args.headless))
+            
             sys.exit(0 if failed == 0 else 1)
         else:
             # Single business name search
@@ -750,9 +913,27 @@ Examples:
         
     except KeyboardInterrupt:
         print("\n\nOperation cancelled by user.")
+        # Still run verification even on interruption (for Excel files)
+        if args.csv:
+            file_ext = Path(args.csv).suffix.lower()
+            if file_ext == '.xlsx':
+                print("\n→ İşlem kesildi, ancak beklemedeki yorumlar kontrol ediliyor...")
+                try:
+                    asyncio.run(verify_pending_reviews(args.csv, headless=args.headless))
+                except:
+                    pass
         sys.exit(130)
     except Exception as e:
         print(f"\n❌ Error: {e}")
+        # Still run verification even on error (for Excel files)
+        if args.csv:
+            file_ext = Path(args.csv).suffix.lower()
+            if file_ext == '.xlsx':
+                print("\n→ Hata oluştu, ancak beklemedeki yorumlar kontrol ediliyor...")
+                try:
+                    asyncio.run(verify_pending_reviews(args.csv, headless=args.headless))
+                except Exception as verify_error:
+                    print(f"⚠️ Doğrulama da başarısız: {verify_error}")
         sys.exit(1)
 
 

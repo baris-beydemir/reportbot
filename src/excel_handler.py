@@ -521,6 +521,128 @@ def get_reported_reviews_for_business(excel_path: str, business_name: str, prefi
         return set()
 
 
+def get_pending_reviews(excel_path: str) -> list[dict]:
+    """Get all reviews with 'beklemede' (pending) status from Excel.
+    
+    Args:
+        excel_path: Path to the Excel file.
+        
+    Returns:
+        List of dictionaries with review information:
+        - row_idx: Row index in Excel (for updating)
+        - review_url: URL of the review
+        - reviewer_name: Name of the reviewer
+        - review_text: Text of the review
+    """
+    if not os.path.exists(excel_path):
+        return []
+    
+    try:
+        wb = load_workbook(excel_path, data_only=True)
+        ws = wb.active
+        
+        # Find column indices from header row
+        col_indices = {}
+        for col_idx, cell in enumerate(ws[1], 1):
+            header_value = str(cell.value or '').lower().strip()
+            for col_key, col_config in COLUMNS.items():
+                if header_value == col_config['header'].lower() or header_value == col_key:
+                    col_indices[col_key] = col_idx
+                    break
+        
+        required_cols = ['review_url', 'reviewer_name', 'review_text', 'status']
+        if not all(col in col_indices for col in required_cols):
+            wb.close()
+            return []
+        
+        pending_reviews = []
+        
+        for row_idx in range(2, ws.max_row + 1):
+            # Get status
+            status_cell = ws.cell(row=row_idx, column=col_indices['status'])
+            status_value = str(status_cell.value or '').lower().strip()
+            
+            # Only process 'beklemede' rows
+            if status_value != 'beklemede':
+                continue
+            
+            # Get review URL
+            review_url_cell = ws.cell(row=row_idx, column=col_indices['review_url'])
+            review_url = str(review_url_cell.value or '').strip()
+            
+            if not review_url:
+                continue
+            
+            # Get reviewer name
+            reviewer_name_cell = ws.cell(row=row_idx, column=col_indices['reviewer_name'])
+            reviewer_name = str(reviewer_name_cell.value or '').strip()
+            
+            # Get review text
+            review_text_cell = ws.cell(row=row_idx, column=col_indices['review_text'])
+            review_text = str(review_text_cell.value or '').strip()
+            
+            pending_reviews.append({
+                'row_idx': row_idx,
+                'review_url': review_url,
+                'reviewer_name': reviewer_name,
+                'review_text': review_text,
+            })
+        
+        wb.close()
+        return pending_reviews
+        
+    except Exception as e:
+        print(f"⚠️ Beklemedeki yorumlar okunurken hata: {e}")
+        return []
+
+
+def update_review_status(excel_path: str, row_idx: int, new_status: str) -> bool:
+    """Update the status of a review at a specific row.
+    
+    Args:
+        excel_path: Path to the Excel file.
+        row_idx: Row index to update.
+        new_status: New status value (e.g., 'silindi', 'reddedildi').
+        
+    Returns:
+        True if update was successful, False otherwise.
+    """
+    if not os.path.exists(excel_path):
+        return False
+    
+    try:
+        wb = load_workbook(excel_path)
+        ws = wb.active
+        
+        # Find status column index
+        status_col_idx = None
+        for col_idx, cell in enumerate(ws[1], 1):
+            header_value = str(cell.value or '').lower().strip()
+            if header_value == COLUMNS['status']['header'].lower() or header_value == 'status':
+                status_col_idx = col_idx
+                break
+        
+        if not status_col_idx:
+            wb.close()
+            return False
+        
+        # Update the status cell
+        status_cell = ws.cell(row=row_idx, column=status_col_idx)
+        status_cell.value = new_status
+        
+        # Apply status coloring
+        if new_status.lower() in STATUS_COLORS:
+            status_cell.fill = STATUS_COLORS[new_status.lower()]
+        
+        wb.save(excel_path)
+        wb.close()
+        return True
+        
+    except Exception as e:
+        print(f"⚠️ Durum güncellenirken hata: {e}")
+        return False
+
+
 def refresh_formatting(excel_path: str) -> bool:
     """Refresh formatting on an existing Excel file.
     
