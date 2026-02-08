@@ -6,6 +6,7 @@ import os
 import sys
 from pathlib import Path
 
+from src.logger import logger
 from src.maps_scraper import MapsScraper, is_turkey_location
 from src.report_filler import ReportFiller
 from src.review_finder import (
@@ -48,13 +49,13 @@ async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dic
     pending_reviews = get_pending_reviews(excel_path)
     
     if not pending_reviews:
-        print("\n📋 Beklemede durumunda yorum bulunamadı.")
+        logger.info("📋 Beklemede durumunda yorum bulunamadı.")
         return {'total': 0, 'deleted': 0, 'still_active': 0, 'errors': 0}
     
-    print(f"\n{'='*60}")
-    print(f"🔍 YORUM DOĞRULAMA - Beklemedeki yorumlar kontrol ediliyor")
-    print(f"{'='*60}")
-    print(f"   Toplam beklemedeki yorum: {len(pending_reviews)}")
+    logger.info("=" * 60)
+    logger.info("🔍 YORUM DOĞRULAMA - Beklemedeki yorumlar kontrol ediliyor")
+    logger.info("=" * 60)
+    logger.info(f"   Toplam beklemedeki yorum: {len(pending_reviews)}")
     
     results = {
         'total': len(pending_reviews),
@@ -83,9 +84,9 @@ async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dic
             review_text = review['review_text']
             row_idx = review['row_idx']
             
-            print(f"\n  [{i}/{len(pending_reviews)}] Kontrol ediliyor:")
-            print(f"      Yorumcu: {reviewer_name}")
-            print(f"      URL: {review_url[:60]}...")
+            logger.info(f"  [{i}/{len(pending_reviews)}] Kontrol ediliyor:")
+            logger.info(f"      Yorumcu: {reviewer_name}")
+            logger.info(f"      URL: {review_url[:60]}...")
             
             try:
                 # Navigate to the review URL
@@ -114,7 +115,7 @@ async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dic
                 # Check 1: Look for error messages indicating the link is not found
                 for error_text in error_indicators:
                     if error_text.lower() in page_text.lower():
-                        print(f"      ❌ Hata mesajı bulundu: '{error_text}'")
+                        logger.warning(f"      ❌ Hata mesajı bulundu: '{error_text}'")
                         is_deleted = True
                         break
                 
@@ -131,31 +132,31 @@ async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dic
                     words_found = first_3_words.lower() in page_text.lower() if first_3_words else True
                     
                     if not reviewer_found and not words_found:
-                        print(f"      ❌ Yorumcu adı bulunamadı: '{reviewer_name}'")
+                        logger.warning(f"      ❌ Yorumcu adı bulunamadı: '{reviewer_name}'")
                         if first_3_words:
-                            print(f"      ❌ Yorum metninin ilk 3 kelimesi bulunamadı: '{first_3_words}'")
+                            logger.warning(f"      ❌ Yorum metninin ilk 3 kelimesi bulunamadı: '{first_3_words}'")
                         is_deleted = True
                     else:
                         if reviewer_found:
-                            print(f"      ✓ Yorumcu adı bulundu: '{reviewer_name}'")
+                            logger.info(f"      ✓ Yorumcu adı bulundu: '{reviewer_name}'")
                         if words_found and first_3_words:
-                            print(f"      ✓ Yorum metni doğrulandı: '{first_3_words}...'")
+                            logger.info(f"      ✓ Yorum metni doğrulandı: '{first_3_words}...'")
                 
                 # Update status if deleted
                 if is_deleted:
-                    print(f"      → Durum 'silindi' olarak güncelleniyor...")
+                    logger.info(f"      → Durum 'silindi' olarak güncelleniyor...")
                     if update_review_status(excel_path, row_idx, 'silindi'):
                         results['deleted'] += 1
-                        print(f"      ✅ Güncellendi!")
+                        logger.info(f"      ✅ Güncellendi!")
                     else:
                         results['errors'] += 1
-                        print(f"      ⚠️ Güncelleme başarısız!")
+                        logger.warning(f"      ⚠️ Güncelleme başarısız!")
                 else:
                     results['still_active'] += 1
-                    print(f"      ✓ Yorum hala aktif")
+                    logger.info(f"      ✓ Yorum hala aktif")
                     
             except Exception as e:
-                print(f"      ⚠️ Kontrol hatası: {e}")
+                logger.error(f"      ⚠️ Kontrol hatası: {e}")
                 results['errors'] += 1
                 continue
                 
@@ -164,14 +165,14 @@ async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dic
         await playwright.stop()
     
     # Print summary
-    print(f"\n{'='*60}")
-    print(f"📊 YORUM DOĞRULAMA SONUÇLARI")
-    print(f"{'='*60}")
-    print(f"   Toplam kontrol edilen: {results['total']}")
-    print(f"   ✅ Hala aktif: {results['still_active']}")
-    print(f"   ❌ Silindi olarak işaretlenen: {results['deleted']}")
-    print(f"   ⚠️ Hata: {results['errors']}")
-    print(f"{'='*60}\n")
+    logger.info("=" * 60)
+    logger.info("📊 YORUM DOĞRULAMA SONUÇLARI")
+    logger.info("=" * 60)
+    logger.info(f"   Toplam kontrol edilen: {results['total']}")
+    logger.info(f"   ✅ Hala aktif: {results['still_active']}")
+    logger.info(f"   ❌ Silindi olarak işaretlenen: {results['deleted']}")
+    logger.info(f"   ⚠️ Hata: {results['errors']}")
+    logger.info("=" * 60)
     
     return results
 
@@ -308,15 +309,15 @@ def update_csv_with_report_id(
             with open(csv_path, 'w', encoding='utf-8', newline='') as f:
                 writer = csv.writer(f, delimiter=';')
                 writer.writerows(rows)
-            print(f"✅ CSV güncellendi: {url[:50]}... -> {report_id}")
+            logger.info(f"✅ CSV güncellendi: {url[:50]}... -> {report_id}")
             if reviews:
-                print(f"   Raporlanan yorumlar ({len(reviews)}) kaydedildi.")
+                logger.info(f"   Raporlanan yorumlar ({len(reviews)}) kaydedildi.")
             return True
         
         return False
         
     except Exception as e:
-        print(f"⚠️ CSV güncellenirken hata: {e}")
+        logger.error(f"⚠️ CSV güncellenirken hata: {e}")
         return False
 
 
@@ -501,20 +502,20 @@ async def run_bot(
     Returns:
         Tuple of (success, report_id, reviews_with_links, business). report_id is None if form was not submitted.
     """
-    print(f"\n{'='*60}")
-    print(f"ReportBot - Google Maps Review Reporter")
-    print(f"{'='*60}\n")
+    logger.info("=" * 60)
+    logger.info("ReportBot - Google Maps Review Reporter")
+    logger.info("=" * 60)
     
     # Determine navigation method
     use_direct_url = maps_url is not None
     
     if use_direct_url:
-        print(f"[1/5] Navigating directly to Maps URL: {maps_url}")
+        logger.info(f"[1/5] Navigating directly to Maps URL: {maps_url}")
     else:
         if not business_name:
-            print("❌ Either business_name or maps_url must be provided")
+            logger.error("❌ Either business_name or maps_url must be provided")
             return (False, None, [], None)
-        print(f"[1/5] Searching for business: {business_name}")
+        logger.info(f"[1/5] Searching for business: {business_name}")
     
     async with MapsScraper(headless=headless) as scraper:
         if use_direct_url:
@@ -525,22 +526,22 @@ async def run_bot(
             business = await scraper.search_business(business_name)
         
         if not business:
-            print(f"❌ Business not found")
+            logger.error("❌ Business not found")
             return (False, None, [], None)
         
-        print(f"✓ Found business: {business.name}")
+        logger.info(f"✓ Found business: {business.name}")
         if business.address:
-            print(f"  Address: {business.address}")
-        print(f"  URL: {business.maps_url}")
+            logger.info(f"  Address: {business.address}")
+        logger.info(f"  URL: {business.maps_url}")
         
         # Check if business is in Turkey
         if not is_turkey_location(business.address):
-            print(f"\n❌ Couldn't do abroad operations - Business is not located in Turkey")
-            print(f"   Address: {business.address}")
+            logger.error(f"❌ Couldn't do abroad operations - Business is not located in Turkey")
+            logger.error(f"   Address: {business.address}")
             return (False, None, [], business)
         
         # Step 2: Get reviews (WITHOUT share links - much faster!)
-        print(f"\n[2/5] Fetching reviews (max {max_reviews})...")
+        logger.info(f"[2/5] Fetching reviews (max {max_reviews})...")
         reviews = await scraper.get_reviews(
             business, 
             max_reviews=max_reviews, 
@@ -549,55 +550,55 @@ async def run_bot(
         )
         
         if not reviews:
-            print("❌ No reviews found for this business")
+            logger.error("❌ No reviews found for this business")
             return (False, None, [], business)
         
-        print(f"✓ Found {len(reviews)} reviews")
+        logger.info(f"✓ Found {len(reviews)} reviews")
         
         # Filter out previously reported reviews if excel_path is provided
         filtered_reviews = reviews
         if excel_path and business:
-            print(f"\n  Checking for previously reported reviews for '{business.name}'...")
+            logger.info(f"  Checking for previously reported reviews for '{business.name}'...")
             reported_prefixes = get_reported_reviews_for_business(excel_path, business.name)
             
             if reported_prefixes:
-                print(f"  Found {len(reported_prefixes)} previously reported review(s)")
+                logger.info(f"  Found {len(reported_prefixes)} previously reported review(s)")
                 filtered_reviews = filter_already_reported_reviews(reviews, reported_prefixes)
                 skipped_count = len(reviews) - len(filtered_reviews)
-                print(f"  Skipping {skipped_count} already reported review(s)")
-                print(f"  Remaining reviews to process: {len(filtered_reviews)}")
+                logger.info(f"  Skipping {skipped_count} already reported review(s)")
+                logger.info(f"  Remaining reviews to process: {len(filtered_reviews)}")
                 
                 if not filtered_reviews:
-                    print("❌ All reviews have been previously reported for this business")
+                    logger.warning("❌ All reviews have been previously reported for this business")
                     return (False, None, [], business)
             else:
-                print(f"  No previously reported reviews found for this business")
+                logger.info(f"  No previously reported reviews found for this business")
         
         # Step 3: Find lowest rated reviews (multiple if review_count > 1)
         actual_count = min(review_count, len(filtered_reviews))
-        print(f"\n[3/5] Finding {actual_count} lowest rated review(s)...")
+        logger.info(f"[3/5] Finding {actual_count} lowest rated review(s)...")
         lowest_reviews = find_lowest_rated_reviews(filtered_reviews, count=actual_count)
         
         for i, rev in enumerate(lowest_reviews, 1):
             # Use filtered_reviews for finding index since that's what we're processing
             original_index = reviews.index(rev)  # Keep original index for scraper
-            print(f"  [{i}] Index {original_index}: {rev.author_name} - {'⭐' * rev.rating} ({rev.rating}/5)")
-            print(f"      {rev.text[:100]}{'...' if len(rev.text) > 100 else ''}")
+            logger.info(f"  [{i}] Index {original_index}: {rev.author_name} - {'⭐' * rev.rating} ({rev.rating}/5)")
+            logger.info(f"      {rev.text[:100]}{'...' if len(rev.text) > 100 else ''}")
         
         # Step 4: Get share links for all lowest rated reviews
-        print(f"\n[4/5] Getting share links for {len(lowest_reviews)} review(s)...")
+        logger.info(f"[4/5] Getting share links for {len(lowest_reviews)} review(s)...")
         reviews_with_links = []
         
         for i, rev in enumerate(lowest_reviews):
             original_index = reviews.index(rev)
-            print(f"  Getting share link for review {i+1}/{len(lowest_reviews)} (index: {original_index})...")
+            logger.info(f"  Getting share link for review {i+1}/{len(lowest_reviews)} (index: {original_index})...")
             share_url = await scraper.get_share_link_for_review_at_index(original_index)
             
             # DEBUG: İlk yorumdan sonra pause - elementi incelemek için
             if i == 0:
-                print("\n  🔍 DEBUG: İlk yorum share linki alındı. Sayfa duraklatıldı...")
-                print("     Playwright Inspector'da elementi inceleyin.")
-                print("     Devam etmek için Inspector'da 'Resume' tıklayın.\n")
+                logger.debug("🔍 DEBUG: İlk yorum share linki alındı. Sayfa duraklatıldı...")
+                logger.debug("   Playwright Inspector'da elementi inceleyin.")
+                logger.debug("   Devam etmek için Inspector'da 'Resume' tıklayın.")
                 #await scraper._page.pause()
             
             # Update the review object with the share link
@@ -611,24 +612,24 @@ async def run_bot(
             reviews_with_links.append(updated_review)
             
             if share_url:
-                print(f"    ✅ {share_url[:50]}...")
+                logger.info(f"    ✅ {share_url[:50]}...")
             else:
-                print(f"    ⚠️ Share link alınamadı")
+                logger.warning(f"    ⚠️ Share link alınamadı")
         
         # Detailed URL logging
-        print("\n" + "="*60)
-        print(f"📋 TOPLAM {len(reviews_with_links)} YORUM İÇİN URL'LER:")
+        logger.info("=" * 60)
+        logger.info(f"📋 TOPLAM {len(reviews_with_links)} YORUM İÇİN URL'LER:")
         for i, rev in enumerate(reviews_with_links, 1):
             if rev.review_url and rev.review_url.startswith("https://maps.app.goo.gl/"):
-                print(f"  [{i}] ✅ {rev.author_name}: {rev.review_url}")
+                logger.info(f"  [{i}] ✅ {rev.author_name}: {rev.review_url}")
             elif rev.review_url:
-                print(f"  [{i}] ⚠️ {rev.author_name}: {rev.review_url} (kısa link değil)")
+                logger.warning(f"  [{i}] ⚠️ {rev.author_name}: {rev.review_url} (kısa link değil)")
             else:
-                print(f"  [{i}] ❌ {rev.author_name}: Share link BOŞ!")
-        print("="*60 + "\n")
+                logger.error(f"  [{i}] ❌ {rev.author_name}: Share link BOŞ!")
+        logger.info("=" * 60)
     
     # Step 5: Fill report form
-    print(f"\n[5/5] Opening report form with {len(reviews_with_links)} review(s)...")
+    logger.info(f"[5/5] Opening report form with {len(reviews_with_links)} review(s)...")
     
     report_id = None
     
@@ -648,15 +649,15 @@ async def run_bot(
         )
         
         if success:
-            print("\n" + "="*60)
-            print("✓ Form filled successfully!")
-            print("Please complete the CAPTCHA manually and submit.")
-            print("="*60 + "\n")
+            logger.info("=" * 60)
+            logger.info("✓ Form filled successfully!")
+            logger.info("Please complete the CAPTCHA manually and submit.")
+            logger.info("=" * 60)
             
             # Wait for user to complete CAPTCHA and get report ID
             report_id = await filler.wait_for_user(timeout_seconds=1800)
         else:
-            print("❌ Failed to fill form")
+            logger.error("❌ Failed to fill form")
             return (False, None, reviews_with_links, business)
     
     return (True, report_id, reviews_with_links, business)
@@ -774,13 +775,13 @@ Examples:
     if args.convert_to_excel:
         try:
             excel_path = convert_csv_to_excel(args.convert_to_excel)
-            print(f"\n✅ Dönüştürme tamamlandı!")
-            print(f"   Excel dosyası: {excel_path}")
-            print(f"\n💡 Artık bu Excel dosyasını kullanabilirsiniz:")
-            print(f"   python -m src.main --csv {excel_path}")
+            logger.info("✅ Dönüştürme tamamlandı!")
+            logger.info(f"   Excel dosyası: {excel_path}")
+            logger.info("💡 Artık bu Excel dosyasını kullanabilirsiniz:")
+            logger.info(f"   python -m src.main --csv {excel_path}")
             sys.exit(0)
         except Exception as e:
-            print(f"❌ Dönüştürme hatası: {e}")
+            logger.error(f"❌ Dönüştürme hatası: {e}")
             sys.exit(1)
     
     # Validate that either business name, URL, or CSV is provided
@@ -805,17 +806,17 @@ Examples:
                 file_type = "CSV"
             
             if not urls_to_process:
-                print(f"📄 No new URLs to process in {file_type} file: {args.csv}")
+                logger.info(f"📄 No new URLs to process in {file_type} file: {args.csv}")
                 # Even if no new URLs, run verification for existing pending reviews
                 if file_ext == '.xlsx':
-                    print("\n→ Mevcut beklemedeki yorumlar kontrol ediliyor...")
+                    logger.info("→ Mevcut beklemedeki yorumlar kontrol ediliyor...")
                     asyncio.run(verify_pending_reviews(args.csv, headless=args.headless if hasattr(args, 'headless') else False))
                 sys.exit(0)
             total_reviews = sum(count for _, count in urls_to_process)
-            print(f"📄 Loaded {len(urls_to_process)} URLs from {args.csv} ({file_type})")
-            print(f"   Toplam raporlanacak yorum sayısı: {total_reviews}")
+            logger.info(f"📄 Loaded {len(urls_to_process)} URLs from {args.csv} ({file_type})")
+            logger.info(f"   Toplam raporlanacak yorum sayısı: {total_reviews}")
         except FileNotFoundError as e:
-            print(f"❌ {e}")
+            logger.error(f"❌ {e}")
             sys.exit(1)
     elif args.url:
         urls_to_process = [(args.url, 1)]  # Default count of 1 for single URL
@@ -829,11 +830,11 @@ Examples:
             results = []  # Store (url, count, report_id) tuples
             
             for i, (url, review_count) in enumerate(urls_to_process, 1):
-                print(f"\n{'#'*60}")
-                print(f"# Processing URL {i}/{total}")
-                print(f"# {url}")
-                print(f"# Review count: {review_count}")
-                print(f"{'#'*60}")
+                logger.info("#" * 60)
+                logger.info(f"# Processing URL {i}/{total}")
+                logger.info(f"# {url}")
+                logger.info(f"# Review count: {review_count}")
+                logger.info("#" * 60)
                 
                 # Determine excel path for filtering previously reported reviews
                 file_ext = Path(args.csv).suffix.lower()
@@ -870,17 +871,17 @@ Examples:
                     results.append((url, review_count, None))
             
             # Summary
-            print(f"\n{'='*60}")
-            print(f"📊 SUMMARY")
-            print(f"{'='*60}")
-            print(f"  Total URLs: {total}")
-            print(f"  ✅ Successful: {successful}")
-            print(f"  ❌ Failed: {failed}")
-            print(f"\n📋 Report IDs:")
+            logger.info("=" * 60)
+            logger.info("📊 SUMMARY")
+            logger.info("=" * 60)
+            logger.info(f"  Total URLs: {total}")
+            logger.info(f"  ✅ Successful: {successful}")
+            logger.info(f"  ❌ Failed: {failed}")
+            logger.info("📋 Report IDs:")
             for url, review_count, report_id in results:
                 status = f"✅ {report_id}" if report_id else "❌ N/A"
-                print(f"  {url[:40]}... ({review_count} reviews) -> {status}")
-            print(f"{'='*60}\n")
+                logger.info(f"  {url[:40]}... ({review_count} reviews) -> {status}")
+            logger.info("=" * 60)
             
             # Run verification step for pending reviews (Excel only)
             file_ext = Path(args.csv).suffix.lower()
@@ -904,36 +905,36 @@ Examples:
             ))
             
             if report_id:
-                print(f"\n✅ Raporlama Kimliği: {report_id}")
+                logger.info(f"✅ Raporlama Kimliği: {report_id}")
                 if reviews_with_links:
                     review_urls = [r.review_url for r in reviews_with_links if r.review_url]
-                    print(f"✅ Raporlanan Yorumlar: {', '.join(review_urls)}")
+                    logger.info(f"✅ Raporlanan Yorumlar: {', '.join(review_urls)}")
             
             sys.exit(0 if success else 1)
         
     except KeyboardInterrupt:
-        print("\n\nOperation cancelled by user.")
+        logger.warning("Operation cancelled by user.")
         # Still run verification even on interruption (for Excel files)
         if args.csv:
             file_ext = Path(args.csv).suffix.lower()
             if file_ext == '.xlsx':
-                print("\n→ İşlem kesildi, ancak beklemedeki yorumlar kontrol ediliyor...")
+                logger.info("→ İşlem kesildi, ancak beklemedeki yorumlar kontrol ediliyor...")
                 try:
                     asyncio.run(verify_pending_reviews(args.csv, headless=args.headless))
                 except:
                     pass
         sys.exit(130)
     except Exception as e:
-        print(f"\n❌ Error: {e}")
+        logger.error(f"❌ Error: {e}")
         # Still run verification even on error (for Excel files)
         if args.csv:
             file_ext = Path(args.csv).suffix.lower()
             if file_ext == '.xlsx':
-                print("\n→ Hata oluştu, ancak beklemedeki yorumlar kontrol ediliyor...")
+                logger.info("→ Hata oluştu, ancak beklemedeki yorumlar kontrol ediliyor...")
                 try:
                     asyncio.run(verify_pending_reviews(args.csv, headless=args.headless))
                 except Exception as verify_error:
-                    print(f"⚠️ Doğrulama da başarısız: {verify_error}")
+                    logger.error(f"⚠️ Doğrulama da başarısız: {verify_error}")
         sys.exit(1)
 
 
