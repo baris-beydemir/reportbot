@@ -1,15 +1,61 @@
 """Logging configuration for ReportBot."""
 import logging
 import os
+import sys
+import atexit
+import traceback
 from logging.handlers import RotatingFileHandler
 
 # Logger instance - will be configured on first import
 _logger = None
+_file_handler = None
+
+
+class FlushingRotatingFileHandler(RotatingFileHandler):
+    """Her log yazımından sonra otomatik flush yapan handler.
+    
+    Bu sayede uygulama aniden kapansa bile loglar diske yazılır.
+    """
+    
+    def emit(self, record):
+        """Log kaydını yaz ve hemen flush yap."""
+        super().emit(record)
+        self.flush()
+
+
+def _flush_all_handlers():
+    """Tüm handler'ları flush et - uygulama kapanırken çağrılır."""
+    if _logger is not None:
+        for handler in _logger.handlers:
+            try:
+                handler.flush()
+            except Exception:
+                pass
+
+
+def _handle_uncaught_exception(exc_type, exc_value, exc_traceback):
+    """Yakalanmamış exception'ları logla ve flush yap.
+    
+    Bu sayede uygulama crash olduğunda son hata mesajı da log'a yazılır.
+    """
+    # KeyboardInterrupt için normal çıkış
+    if issubclass(exc_type, KeyboardInterrupt):
+        sys.__excepthook__(exc_type, exc_value, exc_traceback)
+        return
+    
+    # Hata mesajını logla
+    if _logger is not None:
+        error_msg = ''.join(traceback.format_exception(exc_type, exc_value, exc_traceback))
+        _logger.critical(f"💥 YAKALANMAMIŞ HATA - Uygulama çöktü!\n{error_msg}")
+        _flush_all_handlers()
+    
+    # Orijinal excepthook'u da çağır
+    sys.__excepthook__(exc_type, exc_value, exc_traceback)
 
 
 def setup_logger():
     """Setup and return the application logger."""
-    global _logger
+    global _logger, _file_handler
     
     if _logger is not None:
         return _logger
@@ -30,14 +76,15 @@ def setup_logger():
     if _logger.handlers:
         return _logger
     
-    # Dosyaya yazan handler (5MB'dan büyükse yeni dosyaya geçer, 5 eski dosya tutar)
-    file_handler = RotatingFileHandler(
+    # Dosyaya yazan handler - HER LOG SONRASI FLUSH YAPAR
+    # (5MB'dan büyükse yeni dosyaya geçer, 5 eski dosya tutar)
+    _file_handler = FlushingRotatingFileHandler(
         log_filename,
         maxBytes=5 * 1024 * 1024,  # 5MB
         backupCount=5,  # reportbot.log.1, .2, .3, .4, .5 şeklinde yedekler
         encoding='utf-8'
     )
-    file_handler.setLevel(logging.DEBUG)
+    _file_handler.setLevel(logging.DEBUG)
     
     # Console'a yazan handler
     console_handler = logging.StreamHandler()
@@ -50,11 +97,17 @@ def setup_logger():
     )
     console_formatter = logging.Formatter('%(message)s')  # Console'da sadece mesaj
     
-    file_handler.setFormatter(file_formatter)
+    _file_handler.setFormatter(file_formatter)
     console_handler.setFormatter(console_formatter)
     
-    _logger.addHandler(file_handler)
+    _logger.addHandler(_file_handler)
     _logger.addHandler(console_handler)
+    
+    # Program kapanırken logları flush et
+    atexit.register(_flush_all_handlers)
+    
+    # Yakalanmamış hataları logla
+    sys.excepthook = _handle_uncaught_exception
     
     return _logger
 

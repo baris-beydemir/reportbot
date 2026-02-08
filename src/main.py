@@ -23,6 +23,7 @@ from src.excel_handler import (
     get_pending_reviews,
     update_review_status,
 )
+from src.browser_utils import get_chromium_launch_options
 
 
 async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dict:
@@ -66,10 +67,10 @@ async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dic
     
     # Start browser for verification
     playwright = await async_playwright().start()
-    browser = await playwright.chromium.launch(
-        headless=headless,
-        args=['--disable-blink-features=AutomationControlled']
-    )
+    
+    # Get launch options with bundled browser support (for EXE)
+    launch_options = get_chromium_launch_options(headless=headless)
+    browser = await playwright.chromium.launch(**launch_options)
     context = await browser.new_context(
         viewport={"width": 1280, "height": 800},
         user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",

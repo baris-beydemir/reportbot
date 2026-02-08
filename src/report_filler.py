@@ -11,6 +11,7 @@ from playwright.async_api import async_playwright, Page, Browser, TimeoutError a
 from dotenv import load_dotenv
 
 from src.models import Review, Business
+from src.browser_utils import get_bundled_browser_path
 
 # Load environment variables
 load_dotenv()
@@ -151,12 +152,15 @@ class ReportFiller:
         # Fallback: Use Playwright's own browser with anti-detection
         user_data_dir = os.path.expanduser("~/.reportbot_browser_data")
         
-        self._context = await playwright.chromium.launch_persistent_context(
-            user_data_dir=user_data_dir,
-            headless=self.headless,
-            viewport={"width": 1280, "height": 900},
-            locale="tr-TR",
-            args=[
+        # Check for bundled browser (PyInstaller EXE)
+        bundled_browser = get_bundled_browser_path()
+        
+        launch_kwargs = {
+            "user_data_dir": user_data_dir,
+            "headless": self.headless,
+            "viewport": {"width": 1280, "height": 900},
+            "locale": "tr-TR",
+            "args": [
                 '--disable-blink-features=AutomationControlled',
                 '--disable-features=IsolateOrigins,site-per-process',
                 '--no-sandbox',
@@ -167,8 +171,14 @@ class ReportFiller:
                 '--no-zygote',
                 '--disable-gpu',
             ],
-            ignore_default_args=['--enable-automation'],
-        )
+            "ignore_default_args": ['--enable-automation'],
+        }
+        
+        if bundled_browser:
+            launch_kwargs["executable_path"] = bundled_browser
+            print(f"  🎭 Using bundled browser: {bundled_browser}")
+        
+        self._context = await playwright.chromium.launch_persistent_context(**launch_kwargs)
         
         self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
         

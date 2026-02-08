@@ -5,6 +5,7 @@ from typing import List, Optional
 from playwright.async_api import async_playwright, Page, Browser, TimeoutError as PlaywrightTimeout
 
 from src.models import Review, Business
+from src.browser_utils import get_chromium_launch_options
 
 
 # Turkish city names (all 81 provinces) for location detection
@@ -111,10 +112,10 @@ class MapsScraper:
         """Async context manager entry."""
         playwright = await async_playwright().start()
         self._playwright = playwright
-        self._browser = await playwright.chromium.launch(
-            headless=self.headless,
-            args=['--disable-blink-features=AutomationControlled']
-        )
+        
+        # Get launch options with bundled browser support (for EXE)
+        launch_options = get_chromium_launch_options(headless=self.headless)
+        self._browser = await playwright.chromium.launch(**launch_options)
         self._context = await self._browser.new_context(
             viewport={"width": 1280, "height": 800},
             user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",

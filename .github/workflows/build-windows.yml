@@ -40,15 +40,32 @@ jobs:
         id: chromium
         shell: pwsh
         run: |
-          $chromiumPath = Get-ChildItem "$env:LOCALAPPDATA\ms-playwright" -Directory | Where-Object { $_.Name -like "chromium*" } | Select-Object -First 1
-          echo "CHROMIUM_PATH=$($chromiumPath.FullName)" >> $env:GITHUB_OUTPUT
-          echo "Found Chromium at: $($chromiumPath.FullName)"
+          # Find the chromium folder
+          $chromiumDir = Get-ChildItem "$env:LOCALAPPDATA\ms-playwright" -Directory | Where-Object { $_.Name -like "chromium*" } | Select-Object -First 1
+          echo "Chromium directory: $($chromiumDir.FullName)"
+          
+          # List contents of chromium directory
+          echo "Contents of chromium directory:"
+          Get-ChildItem $chromiumDir.FullName -Recurse -Depth 2 | ForEach-Object { echo "  $($_.FullName)" }
+          
+          # Find chrome.exe
+          $chromeExe = Get-ChildItem $chromiumDir.FullName -Recurse -Filter "chrome.exe" | Select-Object -First 1
+          echo "Chrome.exe found at: $($chromeExe.FullName)"
+          
+          # Get the chrome-win folder (parent of chrome.exe)
+          $chromeWinPath = Split-Path $chromeExe.FullName -Parent
+          echo "Chrome-win path: $chromeWinPath"
+          
+          # Output paths
+          echo "CHROMIUM_PATH=$($chromiumDir.FullName)" >> $env:GITHUB_OUTPUT
+          echo "CHROME_WIN_PATH=$chromeWinPath" >> $env:GITHUB_OUTPUT
       
       - name: 🔨 Build EXE with PyInstaller
         run: |
+          echo "Adding Chromium from: ${{ steps.chromium.outputs.CHROME_WIN_PATH }}"
           pyinstaller --onefile --name ReportBot --clean --noconfirm `
             --add-data "src/reasons.csv;src" `
-            --add-data "${{ steps.chromium.outputs.CHROMIUM_PATH }};playwright/chromium" `
+            --add-data "${{ steps.chromium.outputs.CHROME_WIN_PATH }};chromium" `
             --hidden-import playwright `
             --hidden-import playwright.async_api `
             --hidden-import playwright._impl `
