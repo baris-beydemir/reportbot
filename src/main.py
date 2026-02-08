@@ -31,6 +31,7 @@ async def run_login_mode(maps_url: str) -> None:
     """
     Open browser and navigate to a maps URL for user to login.
     
+    Uses the same Chrome profile as ReportFiller so the login persists.
     The browser will stay open until the user closes it manually.
     When the browser window is closed, the application exits.
     
@@ -38,32 +39,71 @@ async def run_login_mode(maps_url: str) -> None:
         maps_url: Google Maps URL to navigate to.
     """
     from playwright.async_api import async_playwright
+    from src.report_filler import launch_chrome_debug_mode, is_port_in_use
+    import os
+    
+    CDP_PORT = 9222
     
     logger.info("=" * 60)
     logger.info("🔐 LOGIN MODU - Kullanıcı girişi gerekli")
     logger.info("=" * 60)
     logger.info(f"   📍 Maps URL: {maps_url}")
     logger.info("")
-    logger.info("   ℹ️  Tarayıcı açılıyor...")
+    logger.info("   ℹ️  Chrome tarayıcı açılıyor...")
     logger.info("   ℹ️  Lütfen Google hesabınızla giriş yapın.")
     logger.info("   ℹ️  Giriş yaptıktan sonra tarayıcıyı kapatın.")
     logger.info("=" * 60)
     
     playwright = await async_playwright().start()
-    
-    # Get launch options with bundled browser support
-    launch_options = get_chromium_launch_options(headless=False)
-    browser = await playwright.chromium.launch(**launch_options)
-    
-    context = await browser.new_context(
-        viewport={"width": 1280, "height": 800},
-        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        locale="tr-TR"
-    )
-    
-    page = await context.new_page()
+    browser = None
+    page = None
+    chrome_process = None
     
     try:
+        # Try to connect to real Chrome browser (same as ReportFiller)
+        chrome_process = launch_chrome_debug_mode(CDP_PORT)
+        
+        if is_port_in_use(CDP_PORT):
+            logger.info("   → Chrome'a bağlanılıyor...")
+            try:
+                browser = await playwright.chromium.connect_over_cdp(
+                    f"http://localhost:{CDP_PORT}"
+                )
+                
+                # Get existing context or create new one
+                contexts = browser.contexts
+                if contexts:
+                    context = contexts[0]
+                    # Create new page
+                    page = await context.new_page()
+                else:
+                    context = await browser.new_context()
+                    page = await context.new_page()
+                
+                logger.info("   ✅ Chrome tarayıcıya bağlanıldı")
+                
+            except Exception as e:
+                logger.warning(f"   ⚠️ Chrome'a bağlanılamadı: {e}")
+                logger.info("   → Playwright tarayıcısı kullanılıyor...")
+                browser = None
+        
+        # Fallback: Use Playwright's persistent context (same profile as ReportFiller)
+        if not browser:
+            user_data_dir = os.path.expanduser("~/.reportbot_browser_data")
+            
+            context = await playwright.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                headless=False,
+                viewport={"width": 1280, "height": 900},
+                locale="tr-TR",
+                args=[
+                    '--disable-blink-features=AutomationControlled',
+                    '--no-first-run',
+                ],
+            )
+            page = context.pages[0] if context.pages else await context.new_page()
+            logger.info("   ✅ Playwright tarayıcısı açıldı (aynı profil)")
+        
         # Navigate to the maps URL
         await page.goto(maps_url, wait_until="domcontentloaded", timeout=60000)
         logger.info("   ✅ Sayfa yüklendi. Giriş yapabilirsiniz.")
@@ -71,21 +111,22 @@ async def run_login_mode(maps_url: str) -> None:
         logger.info("   ⏳ Tarayıcı kapatılana kadar bekleniyor...")
         
         # Wait until the browser is closed by user
-        # We check if the page is still connected periodically
         while True:
             try:
-                # Check if page is still open by executing a simple script
                 await page.evaluate("() => true")
                 await asyncio.sleep(1)
             except Exception:
-                # Page is closed or disconnected
                 break
                 
     except Exception as e:
         logger.error(f"   ⚠️ Hata: {e}")
     finally:
         try:
-            await browser.close()
+            if browser:
+                # Don't close Chrome, just disconnect
+                pass
+            elif 'context' in dir() and context:
+                await context.close()
         except:
             pass
         await playwright.stop()
