@@ -54,6 +54,12 @@ jobs:
             --hidden-import playwright._impl `
             --hidden-import asyncio `
             --hidden-import greenlet `
+            --hidden-import openpyxl `
+            --hidden-import openpyxl.workbook `
+            --hidden-import openpyxl.worksheet `
+            --hidden-import openpyxl.styles `
+            --hidden-import openpyxl.utils `
+            --collect-all openpyxl `
             run.py
       
       - name: 📊 Check build output
