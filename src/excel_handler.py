@@ -643,6 +643,65 @@ def update_review_status(excel_path: str, row_idx: int, new_status: str) -> bool
         return False
 
 
+def check_login_required(excel_path: str) -> tuple[bool, Optional[str]]:
+    """Check if 'login' is written in the URL column and get the last restaurant's maps link.
+    
+    Scans the URL column for the word 'login' (case-insensitive). If found,
+    returns the last valid maps URL from the file.
+    
+    Args:
+        excel_path: Path to the Excel file.
+        
+    Returns:
+        Tuple of (login_required, last_maps_url):
+        - login_required: True if 'login' is found in URL column
+        - last_maps_url: The last valid maps URL, or None if not found
+    """
+    if not os.path.exists(excel_path):
+        return (False, None)
+    
+    try:
+        wb = load_workbook(excel_path, data_only=True)
+        ws = wb.active
+        
+        # Find URL column index from header row
+        url_col_idx = None
+        for col_idx, cell in enumerate(ws[1], 1):
+            header_value = str(cell.value or '').lower().strip()
+            if header_value == 'url' or header_value == COLUMNS['url']['header'].lower():
+                url_col_idx = col_idx
+                break
+        
+        if url_col_idx is None:
+            wb.close()
+            return (False, None)
+        
+        login_required = False
+        last_maps_url = None
+        
+        # Scan all rows in URL column
+        for row_idx in range(2, ws.max_row + 1):
+            url_cell = ws.cell(row=row_idx, column=url_col_idx)
+            url_value = str(url_cell.value or '').strip()
+            
+            if not url_value:
+                continue
+            
+            # Check if this cell contains "login"
+            if 'login' in url_value.lower():
+                login_required = True
+            # Check if it's a valid maps URL
+            elif url_value.startswith('https://maps.') or url_value.startswith('https://www.google.com/maps') or url_value.startswith('https://goo.gl/maps'):
+                last_maps_url = url_value
+        
+        wb.close()
+        return (login_required, last_maps_url)
+        
+    except Exception as e:
+        print(f"⚠️ Login kontrolü sırasında hata: {e}")
+        return (False, None)
+
+
 def refresh_formatting(excel_path: str) -> bool:
     """Refresh formatting on an existing Excel file.
     

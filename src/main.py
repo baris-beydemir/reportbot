@@ -22,8 +22,78 @@ from src.excel_handler import (
     get_reported_reviews_for_business,
     get_pending_reviews,
     update_review_status,
+    check_login_required,
 )
 from src.browser_utils import get_chromium_launch_options
+
+
+async def run_login_mode(maps_url: str) -> None:
+    """
+    Open browser and navigate to a maps URL for user to login.
+    
+    The browser will stay open until the user closes it manually.
+    When the browser window is closed, the application exits.
+    
+    Args:
+        maps_url: Google Maps URL to navigate to.
+    """
+    from playwright.async_api import async_playwright
+    
+    logger.info("=" * 60)
+    logger.info("🔐 LOGIN MODU - Kullanıcı girişi gerekli")
+    logger.info("=" * 60)
+    logger.info(f"   📍 Maps URL: {maps_url}")
+    logger.info("")
+    logger.info("   ℹ️  Tarayıcı açılıyor...")
+    logger.info("   ℹ️  Lütfen Google hesabınızla giriş yapın.")
+    logger.info("   ℹ️  Giriş yaptıktan sonra tarayıcıyı kapatın.")
+    logger.info("=" * 60)
+    
+    playwright = await async_playwright().start()
+    
+    # Get launch options with bundled browser support
+    launch_options = get_chromium_launch_options(headless=False)
+    browser = await playwright.chromium.launch(**launch_options)
+    
+    context = await browser.new_context(
+        viewport={"width": 1280, "height": 800},
+        user_agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        locale="tr-TR"
+    )
+    
+    page = await context.new_page()
+    
+    try:
+        # Navigate to the maps URL
+        await page.goto(maps_url, wait_until="domcontentloaded", timeout=60000)
+        logger.info("   ✅ Sayfa yüklendi. Giriş yapabilirsiniz.")
+        logger.info("")
+        logger.info("   ⏳ Tarayıcı kapatılana kadar bekleniyor...")
+        
+        # Wait until the browser is closed by user
+        # We check if the page is still connected periodically
+        while True:
+            try:
+                # Check if page is still open by executing a simple script
+                await page.evaluate("() => true")
+                await asyncio.sleep(1)
+            except Exception:
+                # Page is closed or disconnected
+                break
+                
+    except Exception as e:
+        logger.error(f"   ⚠️ Hata: {e}")
+    finally:
+        try:
+            await browser.close()
+        except:
+            pass
+        await playwright.stop()
+    
+    logger.info("")
+    logger.info("=" * 60)
+    logger.info("   ✅ Tarayıcı kapatıldı. Uygulama sonlandırılıyor.")
+    logger.info("=" * 60)
 
 
 async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dict:
@@ -880,10 +950,22 @@ Examples:
     if args.url:
         urls_to_process = [(args.url, 1)]  # Default count of 1 for single URL
     elif args.csv and os.path.exists(args.csv):
+        # Check for login mode first (Excel only)
+        file_ext = Path(args.csv).suffix.lower()
+        if file_ext == '.xlsx':
+            login_required, last_maps_url = check_login_required(args.csv)
+            if login_required:
+                if last_maps_url:
+                    logger.info("🔐 'login' kelimesi tespit edildi - Login modu başlatılıyor...")
+                    asyncio.run(run_login_mode(last_maps_url))
+                    sys.exit(0)
+                else:
+                    logger.error("❌ 'login' kelimesi bulundu ancak geçerli bir Maps URL'si yok!")
+                    logger.error("   Lütfen Excel dosyasına en az bir geçerli Maps URL'si ekleyin.")
+                    sys.exit(1)
+        
         # Read URLs and counts from CSV or Excel file
         try:
-            file_ext = Path(args.csv).suffix.lower()
-            
             if file_ext == '.xlsx':
                 # Read from Excel file
                 urls_to_process = read_excel_urls_with_count(args.csv)
