@@ -702,8 +702,8 @@ Examples:
     parser.add_argument(
         "--csv",
         type=str,
-        default=None,
-        help="Path to CSV or Excel (.xlsx) file containing URLs (columns: 'url', 'count' for number of reviews to report)"
+        default="urls.xlsx",
+        help="Path to CSV or Excel (.xlsx) file containing URLs (default: 'urls.xlsx')"
     )
     
     parser.add_argument(
@@ -784,6 +784,31 @@ Examples:
             logger.error(f"❌ Dönüştürme hatası: {e}")
             sys.exit(1)
     
+    # If using default csv path, check if file exists
+    # If not, and no other args provided, show helpful message
+    if args.csv == "urls.xlsx" and not args.business and not args.url:
+        if not os.path.exists(args.csv):
+            logger.info("=" * 60)
+            logger.info("ReportBot - Google Maps Review Reporter")
+            logger.info("=" * 60)
+            logger.info("")
+            logger.info("⚠️  'urls.xlsx' dosyası bulunamadı!")
+            logger.info("")
+            logger.info("📝 Kullanım seçenekleri:")
+            logger.info("")
+            logger.info("   1. Aynı klasöre 'urls.xlsx' dosyası oluştur:")
+            logger.info("      | url                              | count |")
+            logger.info("      | https://maps.app.goo.gl/xxxxx    | 2     |")
+            logger.info("")
+            logger.info("   2. Veya tek URL ile çalıştır:")
+            logger.info("      ReportBot.exe --url \"https://maps.app.goo.gl/xxxxx\"")
+            logger.info("")
+            logger.info("   3. Farklı bir dosya belirt:")
+            logger.info("      ReportBot.exe --csv baska_dosya.xlsx")
+            logger.info("")
+            logger.info("=" * 60)
+            sys.exit(1)
+    
     # Validate that either business name, URL, or CSV is provided
     if not args.business and not args.url and not args.csv:
         parser.error("Either a business name, --url, or --csv must be provided")
@@ -791,7 +816,10 @@ Examples:
     # Collect URLs to process (with review counts)
     urls_to_process = []  # List of (url, count) tuples
     
-    if args.csv:
+    # Priority: --url > --csv (URL overrides default csv)
+    if args.url:
+        urls_to_process = [(args.url, 1)]  # Default count of 1 for single URL
+    elif args.csv and os.path.exists(args.csv):
         # Read URLs and counts from CSV or Excel file
         try:
             file_ext = Path(args.csv).suffix.lower()
@@ -818,8 +846,6 @@ Examples:
         except FileNotFoundError as e:
             logger.error(f"❌ {e}")
             sys.exit(1)
-    elif args.url:
-        urls_to_process = [(args.url, 1)]  # Default count of 1 for single URL
     
     try:
         if urls_to_process:
