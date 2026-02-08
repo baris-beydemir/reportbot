@@ -1,0 +1,78 @@
+name: Build Windows EXE
+
+on:
+  # Manuel tetikleme (GitHub'dan "Run workflow" butonu ile)
+  workflow_dispatch:
+  
+  # Release oluşturulduğunda otomatik çalış
+  release:
+    types: [created]
+  
+  # İstersen her push'ta da çalıştırabilirsin (yorumu kaldır)
+  # push:
+  #   branches: [main]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    
+    steps:
+      - name: 📥 Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: 🐍 Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      
+      - name: 📦 Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+      
+      - name: 🎭 Install Playwright browsers
+        run: |
+          playwright install chromium
+      
+      - name: 🔍 Find Chromium path
+        id: chromium
+        shell: pwsh
+        run: |
+          $chromiumPath = Get-ChildItem "$env:LOCALAPPDATA\ms-playwright" -Directory | Where-Object { $_.Name -like "chromium*" } | Select-Object -First 1
+          echo "CHROMIUM_PATH=$($chromiumPath.FullName)" >> $env:GITHUB_OUTPUT
+          echo "Found Chromium at: $($chromiumPath.FullName)"
+      
+      - name: 🔨 Build EXE with PyInstaller
+        run: |
+          pyinstaller --onefile --name ReportBot --clean --noconfirm `
+            --add-data "src/reasons.csv;src" `
+            --add-data "${{ steps.chromium.outputs.CHROMIUM_PATH }};playwright/chromium" `
+            --hidden-import playwright `
+            --hidden-import playwright.async_api `
+            --hidden-import playwright._impl `
+            --hidden-import asyncio `
+            --hidden-import greenlet `
+            run.py
+      
+      - name: 📊 Check build output
+        run: |
+          dir dist
+          $size = (Get-Item "dist\ReportBot.exe").Length / 1MB
+          echo "Build complete! Size: $([math]::Round($size, 2)) MB"
+      
+      - name: 📤 Upload EXE artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ReportBot-Windows
+          path: dist/ReportBot.exe
+          retention-days: 30
+      
+      - name: 🏷️ Upload to Release (if release trigger)
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v1
+        with:
+          files: dist/ReportBot.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
