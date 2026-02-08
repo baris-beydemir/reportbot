@@ -53,6 +53,27 @@ def _handle_uncaught_exception(exc_type, exc_value, exc_traceback):
     sys.__excepthook__(exc_type, exc_value, exc_traceback)
 
 
+def get_log_directory() -> str:
+    """
+    Log klasörünün yolunu döndürür.
+    
+    PyInstaller EXE olarak çalışırken: EXE'nin yanındaki logs/ klasörü
+    Normal Python olarak çalışırken: Proje root'undaki logs/ klasörü
+    
+    Returns:
+        Log klasörünün tam yolu.
+    """
+    if getattr(sys, 'frozen', False):
+        # PyInstaller EXE olarak çalışıyor
+        # sys.executable = EXE'nin tam yolu (örn: C:\Users\sidal\Desktop\ReportBot.exe)
+        exe_dir = os.path.dirname(sys.executable)
+        return os.path.join(exe_dir, 'logs')
+    else:
+        # Normal Python olarak çalışıyor
+        project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        return os.path.join(project_root, 'logs')
+
+
 def setup_logger():
     """Setup and return the application logger."""
     global _logger, _file_handler
@@ -60,13 +81,15 @@ def setup_logger():
     if _logger is not None:
         return _logger
     
-    # logs klasörünü oluştur (proje root'unda)
-    project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    log_dir = os.path.join(project_root, 'logs')
+    # logs klasörünü oluştur
+    log_dir = get_log_directory()
     os.makedirs(log_dir, exist_ok=True)
     
     # Tek log dosyası - hep aynı dosyaya yazar
     log_filename = os.path.join(log_dir, 'reportbot.log')
+    
+    # Log dosyası konumunu başlangıçta göster (debug için)
+    print(f"📝 Log dosyası: {log_filename}")
     
     # Logger oluştur
     _logger = logging.getLogger('reportbot')

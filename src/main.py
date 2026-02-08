@@ -44,7 +44,7 @@ async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dic
         - still_active: Number of reviews still active
         - errors: Number of reviews that couldn't be verified
     """
-    from playwright.async_api import async_playwright
+    from playwright.async_api import async_playwright, TimeoutError as PlaywrightTimeout
     
     # Get all pending reviews
     pending_reviews = get_pending_reviews(excel_path)
@@ -78,6 +78,9 @@ async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dic
     )
     page = await context.new_page()
     
+    # Maximum retry attempts for page content verification
+    MAX_RETRIES = 3
+    
     try:
         for i, review in enumerate(pending_reviews, 1):
             review_url = review['review_url']
@@ -90,13 +93,36 @@ async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dic
             logger.info(f"      URL: {review_url[:60]}...")
             
             try:
-                # Navigate to the review URL
-                await page.goto(review_url, wait_until="domcontentloaded", timeout=30000)
-                await asyncio.sleep(3)  # Wait for page to load
+                # Navigate to the review URL with networkidle for full page load
+                logger.info(f"      → Sayfa yükleniyor...")
+                await page.goto(review_url, wait_until="networkidle", timeout=60000)
                 
-                # Get page content for checking
-                page_content = await page.content()
-                page_text = await page.evaluate("() => document.body.innerText")
+                # Wait for Google Maps specific elements to be loaded
+                # These indicate the page has fully rendered
+                maps_content_selectors = [
+                    "div.jftiEf",  # Review container
+                    "[role='main']",  # Main content area
+                    "h1",  # Business name
+                    "[data-review-id]",  # Review element
+                ]
+                
+                page_loaded = False
+                for selector in maps_content_selectors:
+                    try:
+                        await page.wait_for_selector(selector, timeout=10000)
+                        page_loaded = True
+                        logger.info(f"      ✓ Sayfa yüklendi ('{selector}' bulundu)")
+                        break
+                    except PlaywrightTimeout:
+                        continue
+                
+                # Additional wait to ensure dynamic content is loaded
+                if page_loaded:
+                    await asyncio.sleep(2)
+                else:
+                    # If no Maps-specific elements found, wait longer as fallback
+                    logger.info(f"      → Maps elementleri bulunamadı, ek bekleme yapılıyor...")
+                    await asyncio.sleep(5)
                 
                 # Check for "Dynamic Link Not Found" or similar error messages
                 error_indicators = [
@@ -113,6 +139,9 @@ async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dic
                 
                 is_deleted = False
                 
+                # Get page content for checking
+                page_text = await page.evaluate("() => document.body.innerText")
+                
                 # Check 1: Look for error messages indicating the link is not found
                 for error_text in error_indicators:
                     if error_text.lower() in page_text.lower():
@@ -120,17 +149,43 @@ async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dic
                         is_deleted = True
                         break
                 
-                # Check 2: If no error message, verify reviewer name and first 3 words of comment
+                # Check 2: If no error message, verify reviewer name and review text with retry
                 if not is_deleted:
-                    # Check if reviewer name exists on page
-                    reviewer_found = reviewer_name.lower() in page_text.lower()
+                    reviewer_found = False
+                    words_found = False
                     
                     # Get first 3 words of the review text
                     words = review_text.split()[:3]
                     first_3_words = ' '.join(words) if words else ''
                     
-                    # Check if first 3 words exist on page
-                    words_found = first_3_words.lower() in page_text.lower() if first_3_words else True
+                    # Retry logic - page might still be loading dynamic content
+                    for attempt in range(MAX_RETRIES):
+                        # Re-fetch page content on each retry
+                        page_text = await page.evaluate("() => document.body.innerText")
+                        
+                        # Check if reviewer name exists on page
+                        reviewer_found = reviewer_name.lower() in page_text.lower()
+                        
+                        # Check if first 3 words exist on page
+                        words_found = first_3_words.lower() in page_text.lower() if first_3_words else True
+                        
+                        if reviewer_found or words_found:
+                            # Content found, no need to retry
+                            break
+                        
+                        if attempt < MAX_RETRIES - 1:
+                            # Wait before retry - content might still be loading
+                            logger.info(f"      → İçerik bulunamadı, {attempt + 2}. deneme için bekleniyor...")
+                            await asyncio.sleep(3)
+                            
+                            # Try scrolling to trigger lazy-loaded content
+                            try:
+                                await page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                                await asyncio.sleep(1)
+                                await page.evaluate("window.scrollTo(0, 0)")
+                                await asyncio.sleep(1)
+                            except:
+                                pass
                     
                     if not reviewer_found and not words_found:
                         logger.warning(f"      ❌ Yorumcu adı bulunamadı: '{reviewer_name}'")
@@ -156,6 +211,10 @@ async def verify_pending_reviews(excel_path: str, headless: bool = False) -> dic
                     results['still_active'] += 1
                     logger.info(f"      ✓ Yorum hala aktif")
                     
+            except PlaywrightTimeout as e:
+                logger.error(f"      ⚠️ Sayfa yükleme zaman aşımı (60s): {e}")
+                results['errors'] += 1
+                continue
             except Exception as e:
                 logger.error(f"      ⚠️ Kontrol hatası: {e}")
                 results['errors'] += 1
