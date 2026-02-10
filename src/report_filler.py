@@ -78,12 +78,40 @@ def launch_chrome_debug_mode(port: int = 9222) -> Optional[subprocess.Popen]:
     return None
 
 
+def get_reasons_file_path() -> str:
+    """
+    Get the path to reasons.csv file.
+    
+    Priority:
+    1. First check if reasons.csv exists next to the EXE (for user customization)
+    2. Fall back to bundled reasons.csv (inside PyInstaller package)
+    
+    Returns:
+        Path to the reasons.csv file.
+    """
+    import sys
+    
+    # When running as PyInstaller EXE, sys.executable is the EXE path
+    # When running as script, sys.executable is python interpreter
+    if getattr(sys, 'frozen', False):
+        # Running as PyInstaller EXE
+        exe_dir = os.path.dirname(sys.executable)
+        external_csv = os.path.join(exe_dir, "reasons.csv")
+        
+        # Check if user has placed a custom reasons.csv next to the EXE
+        if os.path.exists(external_csv):
+            return external_csv
+    
+    # Fall back to bundled/source reasons.csv
+    return os.path.join(os.path.dirname(__file__), "reasons.csv")
+
+
 class ReportFiller:
     """Filler for Google Report Content form."""
     
     REPORT_URL = "https://reportcontent.google.com/forms/legal_other_geo?ai0&product=geo"
     CDP_PORT = 9222
-    REASONS_FILE = os.path.join(os.path.dirname(__file__), "reasons.csv")
+    REASONS_FILE = get_reasons_file_path()
     
     def __init__(
         self, 
@@ -609,11 +637,14 @@ class ReportFiller:
     def _get_random_reasons(self, count: int) -> List[str]:
         """Read reasons from CSV and return a list of random unique reasons."""
         try:
-            if not os.path.exists(self.REASONS_FILE):
+            # Get the current reasons file path (checks external file first)
+            reasons_file = get_reasons_file_path()
+            
+            if not os.path.exists(reasons_file):
                 return ["Bu içerik Google politikalarını ihlal etmektedir."] * count
             
             all_reasons = []
-            with open(self.REASONS_FILE, mode='r', encoding='utf-8') as f:
+            with open(reasons_file, mode='r', encoding='utf-8') as f:
                 reader = csv.DictReader(f)
                 for row in reader:
                     if row.get('reason'):
