@@ -75,7 +75,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[
-        ('src/reasons.csv', 'src'),
+        ('src/reasons.xlsx', 'src'),
         (str(chromium_path), f'playwright/chromium'),
     ],
     hiddenimports=[

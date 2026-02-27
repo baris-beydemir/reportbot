@@ -80,30 +80,36 @@ def launch_chrome_debug_mode(port: int = 9222) -> Optional[subprocess.Popen]:
 
 def get_reasons_file_path() -> str:
     """
-    Get the path to reasons.csv file.
+    Get the path to the reasons file (.xlsx preferred, .csv fallback).
     
     Priority:
-    1. First check if reasons.csv exists next to the EXE (for user customization)
-    2. Fall back to bundled reasons.csv (inside PyInstaller package)
+    1. reasons.xlsx next to the EXE (user customization)
+    2. reasons.csv next to the EXE (legacy user customization)
+    3. Bundled reasons.xlsx (inside PyInstaller package)
+    4. Bundled reasons.csv (legacy fallback)
     
     Returns:
-        Path to the reasons.csv file.
+        Path to the reasons file.
     """
     import sys
     
-    # When running as PyInstaller EXE, sys.executable is the EXE path
-    # When running as script, sys.executable is python interpreter
+    src_dir = os.path.dirname(__file__)
+    
     if getattr(sys, 'frozen', False):
-        # Running as PyInstaller EXE
         exe_dir = os.path.dirname(sys.executable)
+        external_xlsx = os.path.join(exe_dir, "reasons.xlsx")
         external_csv = os.path.join(exe_dir, "reasons.csv")
         
-        # Check if user has placed a custom reasons.csv next to the EXE
+        if os.path.exists(external_xlsx):
+            return external_xlsx
         if os.path.exists(external_csv):
             return external_csv
     
-    # Fall back to bundled/source reasons.csv
-    return os.path.join(os.path.dirname(__file__), "reasons.csv")
+    bundled_xlsx = os.path.join(src_dir, "reasons.xlsx")
+    if os.path.exists(bundled_xlsx):
+        return bundled_xlsx
+    
+    return os.path.join(src_dir, "reasons.csv")
 
 
 class ReportFiller:
@@ -635,32 +641,80 @@ class ReportFiller:
         return False
 
     def _get_random_reasons(self, count: int) -> List[str]:
-        """Read reasons from CSV and return a list of random unique reasons."""
+        """Read reasons from XLSX (preferred) or CSV and return random unique reasons."""
+        DEFAULT_REASON = "Bu içerik Google politikalarını ihlal etmektedir."
         try:
-            # Get the current reasons file path (checks external file first)
             reasons_file = get_reasons_file_path()
+            print(f"  📄 Reasons dosyası: {reasons_file}")
             
             if not os.path.exists(reasons_file):
-                return ["Bu içerik Google politikalarını ihlal etmektedir."] * count
+                print(f"  ⚠️ Reasons dosyası bulunamadı, varsayılan kullanılıyor")
+                return [DEFAULT_REASON] * count
             
             all_reasons = []
-            with open(reasons_file, mode='r', encoding='utf-8') as f:
-                reader = csv.DictReader(f)
-                for row in reader:
-                    if row.get('reason'):
-                        all_reasons.append(row['reason'])
+            
+            if reasons_file.endswith('.xlsx'):
+                all_reasons = self._read_reasons_from_xlsx(reasons_file)
+            else:
+                all_reasons = self._read_reasons_from_csv(reasons_file)
             
             if not all_reasons:
-                return ["Bu içerik Google politikalarını ihlal etmektedir."] * count
+                print(f"  ⚠️ Dosyada geçerli reason bulunamadı, varsayılan kullanılıyor")
+                return [DEFAULT_REASON] * count
             
-            # If we have enough unique reasons, pick unique ones, otherwise allow duplicates
+            print(f"  ✅ {len(all_reasons)} adet reason yüklendi")
+            
             if len(all_reasons) >= count:
                 return random.sample(all_reasons, count)
             else:
                 return [random.choice(all_reasons) for _ in range(count)]
         except Exception as e:
-            print(f"  ⚠ Error reading reasons CSV: {e}")
-            return ["Bu içerik Google politikalarını ihlal etmektedir."] * count
+            print(f"  ⚠️ Reasons okuma hatası: {e}")
+            return [DEFAULT_REASON] * count
+
+    @staticmethod
+    def _read_reasons_from_xlsx(file_path: str) -> List[str]:
+        """Read reasons from an XLSX file. Expects a 'reason' column header in row 1."""
+        from openpyxl import load_workbook
+        
+        wb = load_workbook(file_path, read_only=True, data_only=True)
+        ws = wb.active
+        
+        headers = [cell.value for cell in next(ws.iter_rows(min_row=1, max_row=1))]
+        headers_lower = [str(h).lower().strip() if h else '' for h in headers]
+        print(f"  📋 XLSX headers: {headers}")
+        
+        reason_col = None
+        for i, h in enumerate(headers_lower):
+            if h == 'reason':
+                reason_col = i
+                break
+        
+        if reason_col is None:
+            reason_col = 0
+        
+        reasons = []
+        for row in ws.iter_rows(min_row=2, values_only=True):
+            if row and len(row) > reason_col:
+                val = row[reason_col]
+                if val and str(val).strip():
+                    reasons.append(str(val).strip())
+        
+        wb.close()
+        return reasons
+
+    @staticmethod
+    def _read_reasons_from_csv(file_path: str) -> List[str]:
+        """Read reasons from a CSV file (legacy fallback)."""
+        reasons = []
+        with open(file_path, mode='r', encoding='utf-8-sig', newline='') as f:
+            reader = csv.DictReader(f)
+            print(f"  📋 CSV headers: {reader.fieldnames}")
+            for row in reader:
+                reason_value = row.get('reason')
+                if reason_value and reason_value.strip():
+                    reasons.append(reason_value.strip())
+        return reasons
     
     async def fill_country_dropdown(self, country: str = "Türkiye"):
         """Fill the country of residence dropdown."""

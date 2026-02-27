@@ -359,8 +359,8 @@ def update_csv_with_report_id(
     
     Updates the row with the matching URL, adding columns for business name,
     review details (url, author, text, rating), and status.
-    Each review is written on a separate row, with url/business_name/count/report_id 
-    only on the first row (grouped format).
+    Each review is written on a separate row, with url/count/report_id 
+    only on the first row (grouped format). Business name is written on every row.
     
     Args:
         csv_path: Path to the CSV file.
@@ -462,8 +462,9 @@ def update_csv_with_report_id(
             additional_rows = []
             
             for review in reviews[1:]:
-                # Create a row with empty values except for review details
                 new_row = [''] * len(EXPECTED_COLUMNS)
+                if business:
+                    new_row[col_indices['business_name']] = business.name or ''
                 new_row[col_indices['review_url']] = review.review_url or ''
                 new_row[col_indices['reviewer_name']] = review.author_name or ''
                 new_row[col_indices['review_text']] = review.text or ''
@@ -705,11 +706,13 @@ async def run_bot(
             logger.info(f"  Address: {business.address}")
         logger.info(f"  URL: {business.maps_url}")
         
-        # Check if business is in Turkey
-        if not is_turkey_location(business.address):
+        # Check if business is in Turkey (skip check if address not found)
+        if business.address and not is_turkey_location(business.address):
             logger.error(f"❌ Couldn't do abroad operations - Business is not located in Turkey")
             logger.error(f"   Address: {business.address}")
             return (False, None, [], business)
+        elif not business.address:
+            logger.warning("⚠️ Address not found, skipping Turkey location check")
         
         # Step 2: Get reviews (WITHOUT share links - much faster!)
         logger.info(f"[2/5] Fetching reviews (max {max_reviews})...")

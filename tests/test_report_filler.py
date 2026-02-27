@@ -118,19 +118,65 @@ class TestReportFillerSelections:
         filler.fill_customer_name.assert_called_with(business.name)
         
     @pytest.mark.asyncio
-    async def test_get_random_reasons_from_csv(self, tmp_path):
-        """Should read random unique reasons from the CSV file."""
-        # Create a temporary reasons.csv
+    async def test_get_random_reasons_from_xlsx(self, tmp_path):
+        """Should read random unique reasons from an XLSX file."""
+        from openpyxl import Workbook
+
         reasons_dir = tmp_path / "src"
         reasons_dir.mkdir()
-        reasons_file = reasons_dir / "reasons.csv"
-        reasons_file.write_text("reason\nReason 1\nReason 2\nReason 3", encoding="utf-8")
-        
+        reasons_file = reasons_dir / "reasons.xlsx"
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["reason"])
+        ws.append(["Reason 1"])
+        ws.append(["Reason 2"])
+        ws.append(["Reason 3"])
+        wb.save(str(reasons_file))
+
         filler = ReportFiller(headless=True)
-        # Override the REASONS_FILE path for the test
-        with patch.object(ReportFiller, 'REASONS_FILE', str(reasons_file)):
+        with patch('src.report_filler.get_reasons_file_path', return_value=str(reasons_file)):
             reasons = filler._get_random_reasons(2)
             assert len(reasons) == 2
             assert reasons[0] in ["Reason 1", "Reason 2", "Reason 3"]
             assert reasons[1] in ["Reason 1", "Reason 2", "Reason 3"]
-            assert reasons[0] != reasons[1] # Should be unique
+            assert reasons[0] != reasons[1]
+
+    @pytest.mark.asyncio
+    async def test_get_random_reasons_xlsx_with_multiline(self, tmp_path):
+        """Should correctly read multiline reasons from XLSX cells."""
+        from openpyxl import Workbook
+
+        reasons_dir = tmp_path / "src"
+        reasons_dir.mkdir()
+        reasons_file = reasons_dir / "reasons.xlsx"
+
+        wb = Workbook()
+        ws = wb.active
+        ws.append(["reason"])
+        ws.append(["Line one\nLine two\nLine three"])
+        ws.append(["Single line reason"])
+        wb.save(str(reasons_file))
+
+        filler = ReportFiller(headless=True)
+        with patch('src.report_filler.get_reasons_file_path', return_value=str(reasons_file)):
+            reasons = filler._get_random_reasons(2)
+            assert len(reasons) == 2
+            assert "Line one\nLine two\nLine three" in reasons
+            assert "Single line reason" in reasons
+
+    @pytest.mark.asyncio
+    async def test_get_random_reasons_csv_fallback(self, tmp_path):
+        """Should fall back to CSV when no XLSX is available."""
+        reasons_dir = tmp_path / "src"
+        reasons_dir.mkdir()
+        reasons_file = reasons_dir / "reasons.csv"
+        reasons_file.write_text("reason\nReason 1\nReason 2\nReason 3", encoding="utf-8")
+
+        filler = ReportFiller(headless=True)
+        with patch('src.report_filler.get_reasons_file_path', return_value=str(reasons_file)):
+            reasons = filler._get_random_reasons(2)
+            assert len(reasons) == 2
+            assert reasons[0] in ["Reason 1", "Reason 2", "Reason 3"]
+            assert reasons[1] in ["Reason 1", "Reason 2", "Reason 3"]
+            assert reasons[0] != reasons[1]

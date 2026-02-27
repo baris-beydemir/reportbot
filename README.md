@@ -76,6 +76,7 @@ reportbot/
 │   ├── models.py         # Veri modelleri
 │   ├── maps_scraper.py   # Google Maps scraper
 │   ├── report_filler.py  # Form doldurma
+│   ├── reasons.xlsx      # Şikayet nedenleri (Excel)
 │   └── review_finder.py  # Review bulma logic'i
 ├── tests/
 │   ├── __init__.py
@@ -94,3 +95,26 @@ reportbot/
 - CAPTCHA otomatik çözülmez, manuel tamamlamanız gerekir
 - Bot tespit edilmemesi için headless mod kullanılması önerilmez
 - Rate limiting'e dikkat edin
+
+## Önemli Not: Browser Kullanımı ve Login Durumu
+
+Uygulama farklı işlemler için farklı browser'lar kullanır:
+
+| Modül | Browser Tipi | Profil | Login Durumu |
+|-------|-------------|--------|--------------|
+| **MapsScraper** | Yeni Playwright browser | Yok (her seferinde temiz) | ❌ Loginsiz |
+| **ReportFiller** | Gerçek Chrome (CDP) | `~/.reportbot_chrome_profile` | ✅ Loginli |
+| **Login Modu** | Gerçek Chrome (CDP) | `~/.reportbot_chrome_profile` | ✅ Loginli |
+
+### Login Modu Kullanımı
+
+Excel dosyasındaki URL kolonuna **"login"** yazarsanız:
+- Uygulama gerçek Chrome tarayıcısını açar (ReportFiller ile aynı profil)
+- Son kayıtlı restoranın Maps URL'sine gider
+- Google hesabınızla giriş yapabilirsiniz
+- Login bilgileri `~/.reportbot_chrome_profile` klasörüne kaydedilir
+- Pencereyi kapatınca uygulama sonlanır
+
+**Sonraki çalıştırmalarda**: ReportFiller aynı profili kullandığı için login bilgileri hatırlanır ve CAPTCHA dışında tekrar login gerekmez.
+
+**Not**: MapsScraper yorumları taramak için ayrı bir Playwright browser kullanır (loginsiz). Bu tasarım gereği böyledir çünkü yorumları taramak için login gerekmez ve her çalıştırmada temiz bir browser daha güvenlidir.

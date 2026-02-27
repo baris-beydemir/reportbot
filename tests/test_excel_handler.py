@@ -294,10 +294,15 @@ class TestUpdateExcelWithReport:
             
             merged_ranges = [str(r) for r in ws.merged_cells.ranges]
             
-            # URL, count, business_name, report_id should be merged (A2:A3, B2:B3, C2:C3, D2:D3)
+            # URL, count, report_id should be merged (A2:A3, B2:B3, D2:D3)
             assert 'A2:A3' in merged_ranges
             assert 'B2:B3' in merged_ranges
             assert 'D2:D3' in merged_ranges  # report_id
+            
+            # business_name should NOT be merged - each row gets its own value
+            assert 'C2:C3' not in merged_ranges
+            assert ws.cell(row=2, column=3).value == 'Test Cafe'
+            assert ws.cell(row=3, column=3).value == 'Test Cafe'
             
             # Verify both reviews are in the sheet (review_url is column 5)
             assert ws.cell(row=2, column=5).value == 'https://review1'  # First review
@@ -364,11 +369,13 @@ class TestConvertCsvToExcel:
             # Check that cells are merged for the first restaurant (rows 2-3)
             merged_ranges = [str(r) for r in ws.merged_cells.ranges]
             
-            # URL, business_name, count, report_id should be merged
+            # URL, count, report_id should be merged
             assert 'A2:A3' in merged_ranges
             assert 'B2:B3' in merged_ranges
-            assert 'C2:C3' in merged_ranges
             assert 'D2:D3' in merged_ranges
+            
+            # business_name should NOT be merged
+            assert 'C2:C3' not in merged_ranges
             
             # Row 4 (second restaurant) should not have merged cells
             assert 'A4:A5' not in merged_ranges

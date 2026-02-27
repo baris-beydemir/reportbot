@@ -29,7 +29,7 @@ COLUMNS = {
 COLUMN_ORDER = ['url', 'count', 'business_name', 'report_id', 'review_url', 'report_date', 'reviewer_name', 'review_text', 'rating', 'status']
 
 # Columns to merge for multiple reviews of the same restaurant
-MERGE_COLUMNS = ['url', 'business_name', 'count', 'report_id']
+MERGE_COLUMNS = ['url', 'count', 'report_id']
 
 # Status options for dropdown
 STATUS_OPTIONS = ['beklemede', 'silindi', 'reddedildi', 'işleniyor']
@@ -301,7 +301,8 @@ def update_excel_with_report(
                 new_row_idx = url_row_idx + i
                 ws.insert_rows(new_row_idx)
                 
-                # Only fill review-related columns
+                if business and 'business_name' in col_indices:
+                    ws.cell(row=new_row_idx, column=col_indices['business_name']).value = business.name or ''
                 if 'review_url' in col_indices:
                     ws.cell(row=new_row_idx, column=col_indices['review_url']).value = review.review_url or ''
                 if 'report_date' in col_indices:

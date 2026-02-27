@@ -524,28 +524,69 @@ class MapsScraper:
         # Sort by lowest rating (use dedicated method)
         await self._sort_by_lowest_rating()
         
-        # Scroll to load more reviews
-        print("  Loading reviews...")
+        # Scroll to load more reviews dynamically
+        # Google Maps lazy-loads reviews; initially only ~10 are visible.
+        # We keep scrolling until we have enough or no new reviews load.
+        print(f"  Loading reviews (target: {max_reviews})...")
         try:
-            # Find scrollable reviews container
             scroll_selectors = [
-                "[role='main']",
                 ".m6QErb.DxyBCb",
+                "[role='main']",
                 "[class*='section-scrollbox']",
             ]
             
+            review_count_selectors = [
+                "div.jftiEf.fontBodyMedium",
+                "[data-review-id]",
+                "[class*='jftiEf']",
+            ]
+            
+            reviews_container = None
             for selector in scroll_selectors:
                 try:
-                    reviews_container = self._page.locator(selector).first
-                    if await reviews_container.is_visible(timeout=2000):
-                        for _ in range(5):  # Scroll more times
-                            await reviews_container.evaluate("el => el.scrollTop = el.scrollHeight")
-                            await asyncio.sleep(1)
+                    container = self._page.locator(selector).first
+                    if await container.is_visible(timeout=2000):
+                        reviews_container = container
                         break
                 except:
                     continue
-        except:
-            pass
+            
+            if reviews_container:
+                prev_count = 0
+                no_new_reviews_attempts = 0
+                max_no_new_attempts = 3
+                max_scroll_rounds = 30
+                
+                for scroll_round in range(max_scroll_rounds):
+                    await reviews_container.evaluate("el => el.scrollTop = el.scrollHeight")
+                    await asyncio.sleep(1.5)
+                    
+                    current_count = 0
+                    for sel in review_count_selectors:
+                        try:
+                            current_count = await self._page.locator(sel).count()
+                            if current_count > 0:
+                                break
+                        except:
+                            continue
+                    
+                    if current_count >= max_reviews:
+                        print(f"  ✓ Loaded {current_count} reviews (target reached)")
+                        break
+                    
+                    if current_count == prev_count:
+                        no_new_reviews_attempts += 1
+                        if no_new_reviews_attempts >= max_no_new_attempts:
+                            print(f"  ✓ No more reviews loading ({current_count} total)")
+                            break
+                    else:
+                        no_new_reviews_attempts = 0
+                        if scroll_round % 5 == 0 or current_count > prev_count:
+                            print(f"  ... loaded {current_count} reviews so far")
+                    
+                    prev_count = current_count
+        except Exception as e:
+            print(f"  ⚠ Scroll error: {e}")
         
         # Parse reviews
         print("  Parsing reviews...")

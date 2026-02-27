@@ -302,10 +302,10 @@ class TestUpdateCsvWithReportId:
         assert rows[1][7] == "1"
         assert rows[1][8] == "beklemede"
         
-        # Subsequent rows have empty url/count/business_name/report_id
+        # Subsequent rows have empty url/count/report_id but business_name is filled
         assert rows[2][0] == ""
         assert rows[2][1] == ""
-        assert rows[2][2] == ""
+        assert rows[2][2] == "Test Restaurant"
         assert rows[2][3] == ""
         assert rows[2][4] == "https://maps.app.goo.gl/review2"
         assert rows[2][5] == "Jane Smith"

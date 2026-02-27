@@ -58,7 +58,7 @@ def main():
     
     # Data dosyalarını hazırla
     datas = [
-        f"src/reasons.csv;src",
+        f"src/reasons.xlsx;src",
         f"{chromium_path};playwright/chromium",
     ]
     
