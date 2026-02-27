@@ -29,6 +29,7 @@ class Review:
     text: str
     review_url: Optional[str] = None
     date: Optional[str] = None
+    has_image: bool = False
     
     def __post_init__(self):
         if not 1 <= self.rating <= 5:

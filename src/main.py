@@ -13,6 +13,7 @@ from src.review_finder import (
     find_lowest_rated_review,
     find_lowest_rated_reviews,
     filter_already_reported_reviews,
+    filter_image_reviews,
 )
 from src.models import Business, Review
 from src.excel_handler import (
@@ -748,14 +749,22 @@ async def run_bot(
             else:
                 logger.info(f"  No previously reported reviews found for this business")
         
-        # Step 3: Find lowest rated reviews (multiple if review_count > 1)
-        actual_count = min(review_count, len(filtered_reviews))
-        logger.info(f"[3/5] Finding {actual_count} lowest rated review(s)...")
-        lowest_reviews = find_lowest_rated_reviews(filtered_reviews, count=actual_count)
+        # Log image review stats
+        image_review_count = sum(1 for r in filtered_reviews if r.has_image)
+        if image_review_count > 0:
+            logger.info(f"  📷 {image_review_count} resimli yorum tespit edildi, bunlar atlanacak")
+        
+        # Step 3: Find lowest rated reviews, skipping ones with images
+        non_image_count = len([r for r in filtered_reviews if not r.has_image])
+        actual_count = min(review_count, non_image_count)
+        logger.info(f"[3/5] Finding {actual_count} lowest rated review(s) (resimli yorumlar atlanıyor)...")
+        lowest_reviews = find_lowest_rated_reviews(filtered_reviews, count=actual_count, skip_image_reviews=True)
+        
+        if actual_count < review_count:
+            logger.warning(f"  ⚠️ İstenen {review_count} yorum, ancak resimli olmayan sadece {non_image_count} yorum mevcut")
         
         for i, rev in enumerate(lowest_reviews, 1):
-            # Use filtered_reviews for finding index since that's what we're processing
-            original_index = reviews.index(rev)  # Keep original index for scraper
+            original_index = reviews.index(rev)
             logger.info(f"  [{i}] Index {original_index}: {rev.author_name} - {'⭐' * rev.rating} ({rev.rating}/5)")
             logger.info(f"      {rev.text[:100]}{'...' if len(rev.text) > 100 else ''}")
         
@@ -775,13 +784,13 @@ async def run_bot(
                 logger.debug("   Devam etmek için Inspector'da 'Resume' tıklayın.")
                 #await scraper._page.pause()
             
-            # Update the review object with the share link
             updated_review = Review(
                 author_name=rev.author_name,
                 rating=rev.rating,
                 text=rev.text,
                 date=rev.date,
-                review_url=share_url
+                review_url=share_url,
+                has_image=rev.has_image
             )
             reviews_with_links.append(updated_review)
             

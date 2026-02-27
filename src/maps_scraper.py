@@ -694,6 +694,24 @@ class MapsScraper:
                     except:
                         continue
                 
+                # Detect if review contains images/photos
+                has_image = False
+                image_selectors = [
+                    "button.Tya61d",
+                    "[data-photo-url]",
+                    ".KtCyie",
+                    ".review-photos",
+                    "div[style*='background-image']",
+                ]
+                for sel in image_selectors:
+                    try:
+                        img_count = await review_el.locator(sel).count()
+                        if img_count > 0:
+                            has_image = True
+                            break
+                    except:
+                        continue
+                
                 # Get share link for this review (only if requested - usually skip this)
                 review_url = None
                 if get_share_links:
@@ -705,7 +723,8 @@ class MapsScraper:
                         rating=rating,
                         text=text.strip() if text else "",
                         date=date.strip() if date else None,
-                        review_url=review_url
+                        review_url=review_url,
+                        has_image=has_image
                     ))
             except Exception as e:
                 print(f"  Error parsing review {i}: {e}")

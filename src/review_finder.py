@@ -68,17 +68,42 @@ def find_lowest_rated_review(reviews: List[Review]) -> Review:
     return min(reviews, key=lambda r: r.rating)
  
 
-def find_lowest_rated_reviews(reviews: List[Review], count: int = 1) -> List[Review]:
+def filter_image_reviews(reviews: List[Review]) -> List[Review]:
+    """Filter out reviews that contain images/photos.
+    
+    Args:
+        reviews: List of Review objects to filter.
+        
+    Returns:
+        List of reviews that don't contain images.
+    """
+    if not reviews:
+        return []
+    
+    return [r for r in reviews if not r.has_image]
+
+
+def find_lowest_rated_reviews(
+    reviews: List[Review], 
+    count: int = 1,
+    skip_image_reviews: bool = True
+) -> List[Review]:
     """
     Find the n lowest rated reviews from a list of reviews.
+    
+    When skip_image_reviews is True, reviews containing images are skipped
+    and replaced with the next lowest-rated review without images.
+    For example, if 5 reviews are needed and the 3rd lowest has an image,
+    reviews 1, 2, 4, 5, 6 are returned instead.
     
     Args:
         reviews: List of Review objects to search through.
         count: Number of lowest rated reviews to return.
+        skip_image_reviews: Whether to skip reviews with images (default: True).
         
     Returns:
         List of Reviews sorted by rating (lowest first).
-        If count exceeds the number of reviews, returns all reviews sorted.
+        If count exceeds available reviews, returns all eligible reviews sorted.
         
     Raises:
         ValueError: If the reviews list is empty.
@@ -86,6 +111,17 @@ def find_lowest_rated_reviews(reviews: List[Review], count: int = 1) -> List[Rev
     if not reviews:
         raise ValueError("No reviews provided")
     
-    # Sort by rating and return the first 'count' reviews
     sorted_reviews = sorted(reviews, key=lambda r: r.rating)
-    return sorted_reviews[:count]
+    
+    if not skip_image_reviews:
+        return sorted_reviews[:count]
+    
+    selected = []
+    for review in sorted_reviews:
+        if len(selected) >= count:
+            break
+        if review.has_image:
+            continue
+        selected.append(review)
+    
+    return selected
