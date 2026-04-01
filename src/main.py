@@ -26,6 +26,7 @@ from src.excel_handler import (
     check_login_required,
 )
 from src.browser_utils import get_chromium_launch_options
+from src.validate_token import post_validate_token
 
 
 async def run_login_mode(maps_url: str) -> None:
@@ -655,7 +656,8 @@ async def run_bot(
     country: str = "Türkiye",
     legal_name: str = "Doğukan Öztürk",
     review_count: int = 1,
-    excel_path: str = None
+    excel_path: str = None,
+    humanize: bool = False
 ) -> tuple[bool, str | None, list[Review], Business | None]:
     """
     Run the full automation flow.
@@ -690,7 +692,7 @@ async def run_bot(
             return (False, None, [], None)
         logger.info(f"[1/5] Searching for business: {business_name}")
     
-    async with MapsScraper(headless=headless) as scraper:
+    async with MapsScraper(headless=headless, humanize=humanize) as scraper:
         if use_direct_url:
             # Navigate directly to the Maps URL (dual-tab approach)
             business = await scraper.navigate_to_maps_url(maps_url)
@@ -820,7 +822,8 @@ async def run_bot(
         headless=False,  # Never headless for CAPTCHA
         google_email=google_email,
         google_password=google_password,
-        use_real_chrome=True  # Use real Chrome browser for reliable login
+        use_real_chrome=True,  # Use real Chrome browser for reliable login
+        humanize=humanize
     ) as filler:
         success = await filler.fill_form(
             business=business,
@@ -839,6 +842,19 @@ async def run_bot(
             
             # Wait for user to complete CAPTCHA and get report ID
             report_id = await filler.wait_for_user(timeout_seconds=1800)
+            if report_id:
+                ok = await asyncio.to_thread(
+                    post_validate_token,
+                    business.name,
+                    filler.last_filled_reasons,
+                )
+                if not ok:
+                    logger.error(
+                        "❌ Token doğrulama başarısız (HTTP 200 bekleniyordu). "
+                        "Rapor Google tarafına iletilmiş olabilir. Kimlik: %s",
+                        report_id,
+                    )
+                    return (False, report_id, reviews_with_links, business)
         else:
             logger.error("❌ Failed to fill form")
             return (False, None, reviews_with_links, business)
@@ -915,6 +931,13 @@ Examples:
         "--headless",
         action="store_true",
         help="Run Maps scraper in headless mode (report form always visible for CAPTCHA)"
+    )
+    
+    parser.add_argument(
+        "--humanize",
+        action="store_true",
+        default=False,
+        help="Enable random human-like browser actions (mouse moves, typos, pauses) to reduce bot detection"
     )
     
     parser.add_argument(
@@ -1073,7 +1096,8 @@ Examples:
                     country=args.country,
                     legal_name=args.name,
                     review_count=review_count,
-                    excel_path=excel_path_for_filter
+                    excel_path=excel_path_for_filter,
+                    humanize=args.humanize
                 ))
                 
                 if success:
@@ -1122,7 +1146,8 @@ Examples:
                 google_email=args.email,
                 google_password=args.password,
                 country=args.country,
-                legal_name=args.name
+                legal_name=args.name,
+                humanize=args.humanize
             ))
             
             if report_id:

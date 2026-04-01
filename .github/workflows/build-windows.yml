@@ -77,6 +77,8 @@ jobs:
             --hidden-import openpyxl.styles `
             --hidden-import openpyxl.utils `
             --collect-all openpyxl `
+            --hidden-import jwt `
+            --hidden-import PyJWT `
             run.py
       
       - name: 📊 Check build output

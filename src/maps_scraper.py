@@ -6,6 +6,7 @@ from playwright.async_api import async_playwright, Page, Browser, TimeoutError a
 
 from src.models import Review, Business
 from src.browser_utils import get_chromium_launch_options
+from src.human_behavior import HumanBehavior
 
 
 # Turkish city names (all 81 provinces) for location detection
@@ -97,16 +98,19 @@ class MapsScraper:
         "form[action*='consent'] button",
     ]
     
-    def __init__(self, headless: bool = False):
+    def __init__(self, headless: bool = False, humanize: bool = False):
         """
         Initialize the scraper.
         
         Args:
             headless: Whether to run browser in headless mode.
+            humanize: Enable random human-like browser actions to reduce bot fingerprint.
         """
         self.headless = headless
+        self._humanize = humanize
         self._browser: Optional[Browser] = None
         self._page: Optional[Page] = None
+        self._human: Optional[HumanBehavior] = None
     
     async def __aenter__(self):
         """Async context manager entry."""
@@ -123,6 +127,7 @@ class MapsScraper:
             permissions=["clipboard-read", "clipboard-write"]
         )
         self._page = await self._context.new_page()
+        self._human = HumanBehavior(self._page, intensity=0.5, enabled=self._humanize)
         return self
     
     async def __aexit__(self, exc_type, exc_val, exc_tb):
@@ -178,6 +183,7 @@ class MapsScraper:
         # Handle cookie consent
         await self._handle_cookie_consent()
         await asyncio.sleep(1)
+        await self._human.maybe_act()
         
         # Find and use search box
         search_box = await self._find_search_box()
@@ -195,13 +201,15 @@ class MapsScraper:
             print("  Searching...")
             await search_box.click()
             await asyncio.sleep(0.5)
-            await search_box.fill(business_name)
+            await self._human.type_with_mistakes(search_box, business_name)
             await asyncio.sleep(0.5)
+            await self._human.maybe_act()
             await search_box.press("Enter")
         
         # Wait for results
         await self._page.wait_for_load_state("networkidle")
         await asyncio.sleep(3)  # Extra wait for dynamic content
+        await self._human.maybe_act()
         
         # Click on first result if there are multiple (search results page)
         print("  Looking for business in results...")
@@ -296,6 +304,7 @@ class MapsScraper:
         # Handle cookie consent on first tab
         await self._handle_cookie_consent()
         await asyncio.sleep(2)
+        await self._human.maybe_act()
         
         # Step 2: Open second tab with the same URL
         print("  Opening second tab (Yorumlar sekmesi burada görünecek)...")
@@ -309,7 +318,9 @@ class MapsScraper:
         
         # Step 4: Continue on second tab
         self._page = second_page
+        self._human.update_page(self._page)
         await asyncio.sleep(2)
+        await self._human.maybe_act()
         
         # Get business info from the page
         try:
@@ -380,6 +391,8 @@ class MapsScraper:
             "[aria-label='Reviews']",
         ]
         
+        await self._human.maybe_act()
+        
         for selector in yorumlar_tab_selectors:
             try:
                 tab = self._page.locator(selector).first
@@ -387,6 +400,7 @@ class MapsScraper:
                     await tab.click()
                     print(f"  ✓ Clicked Yorumlar tab with selector: {selector}")
                     await asyncio.sleep(2)
+                    await self._human.maybe_act()
                     return True
             except Exception:
                 continue
@@ -560,6 +574,8 @@ class MapsScraper:
                 for scroll_round in range(max_scroll_rounds):
                     await reviews_container.evaluate("el => el.scrollTop = el.scrollHeight")
                     await asyncio.sleep(1.5)
+                    if scroll_round % 3 == 2:
+                        await self._human.maybe_act()
                     
                     current_count = 0
                     for sel in review_count_selectors:
@@ -870,6 +886,7 @@ class MapsScraper:
                 return None
             
             print("    → Eylem menüsü butonuna tıklanıyor...")
+            await self._human.maybe_act()
             await action_button.click()
             await asyncio.sleep(1)
             
@@ -902,6 +919,7 @@ class MapsScraper:
             
             # Step 3: Get the link by clicking "Bağlantıyı kopyala" button
             # Use: get_by_role("button", name="Bağlantıyı kopyala")
+            await self._human.maybe_act()
             print("    → 'Bağlantıyı kopyala' butonu aranıyor...")
             
             try:

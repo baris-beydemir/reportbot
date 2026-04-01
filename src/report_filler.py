@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 
 from src.models import Review, Business
 from src.browser_utils import get_bundled_browser_path
+from src.human_behavior import HumanBehavior
 
 # Load environment variables
 load_dotenv()
@@ -124,7 +125,8 @@ class ReportFiller:
         headless: bool = False, 
         google_email: str = None, 
         google_password: str = None,
-        use_real_chrome: bool = True
+        use_real_chrome: bool = True,
+        humanize: bool = False
     ):
         """
         Initialize the form filler.
@@ -134,16 +136,20 @@ class ReportFiller:
             google_email: Google account email for auto-login.
             google_password: Google account password for auto-login.
             use_real_chrome: If True, connect to real Chrome browser via CDP.
+            humanize: Enable random human-like browser actions to reduce bot fingerprint.
         """
         self.headless = headless
         self.google_email = google_email or os.getenv("GOOGLE_EMAIL")
         self.google_password = google_password or os.getenv("GOOGLE_PASSWORD")
         self.use_real_chrome = use_real_chrome
+        self._humanize = humanize
         self._context = None
         self._browser = None
         self._page: Optional[Page] = None
         self._playwright = None
         self._chrome_process = None
+        self._human: Optional[HumanBehavior] = None
+        self.last_filled_reasons: List[str] = []
     
     async def __aenter__(self):
         """Async context manager entry."""
@@ -174,6 +180,7 @@ class ReportFiller:
                         self._context = await self._browser.new_context()
                         self._page = await self._context.new_page()
                     
+                    self._human = HumanBehavior(self._page, intensity=0.5, enabled=self._humanize)
                     print("  ✓ Connected to Chrome browser")
                     return self
                     
@@ -215,6 +222,7 @@ class ReportFiller:
         self._context = await playwright.chromium.launch_persistent_context(**launch_kwargs)
         
         self._page = self._context.pages[0] if self._context.pages else await self._context.new_page()
+        self._human = HumanBehavior(self._page, intensity=0.5, enabled=self._humanize)
         
         # Hide webdriver property to avoid detection
         await self._page.add_init_script("""
@@ -258,6 +266,9 @@ class ReportFiller:
         for char in text:
             await self._page.keyboard.type(char, delay=random.randint(delay_min, delay_max))
             await asyncio.sleep(random.uniform(0.01, 0.05))
+            # Occasional micro-pause as if thinking
+            if random.random() < 0.04:
+                await asyncio.sleep(random.uniform(0.3, 0.9))
     
     async def _handle_google_login(self) -> bool:
         """
@@ -299,6 +310,8 @@ class ReportFiller:
                     # Click on the field first to focus it
                     await email_field.click()
                     await asyncio.sleep(0.5)
+                    if self._human:
+                        await self._human.maybe_act()
                     
                     # Clear any existing text
                     await self._page.keyboard.press("Control+a")
@@ -353,6 +366,8 @@ class ReportFiller:
                         if password_field:
                             await password_field.click()
                             await asyncio.sleep(0.3)
+                            if self._human:
+                                await self._human.maybe_act()
                             
                             print("  Entering password...")
                             await self._type_like_human(self.google_password)
@@ -559,6 +574,7 @@ class ReportFiller:
             # For first URL, just fill
             # For subsequent URLs, click add button first
             if i > 0:
+                await self._human.maybe_act_form()
                 success = await self.click_add_url_button()
                 if not success:
                     print(f"  ⚠️ URL {i + 1} için alan eklenemedi, durduruluyor")
@@ -569,6 +585,7 @@ class ReportFiller:
             success = await self.fill_url_field(url, field_index=i)
             if success:
                 filled_count += 1
+                await self._human.maybe_act_form()
                 # If we have a reason for this URL, fill the corresponding textarea
                 if reasons and i < len(reasons):
                     await self.fill_textarea_at_index(reasons[i], i)
@@ -1205,8 +1222,10 @@ class ReportFiller:
             print("❌ No reviews provided")
             return False
         
+        self.last_filled_reasons = []
         await self.navigate_to_form()
         await asyncio.sleep(2)
+        await self._human.maybe_act_form()
         
         # Fill "Your information" section
         print("  Filling personal information...")
@@ -1214,22 +1233,27 @@ class ReportFiller:
         # Fill country dropdown
         await self.fill_country_dropdown(country)
         await asyncio.sleep(0.5)
+        await self._human.maybe_act_form()
         
         # Fill legal name
         await self.fill_legal_name(legal_name)
         await asyncio.sleep(0.5)
+        await self._human.maybe_act_form()
         
         # Select "Someone else" for acting on behalf
         await self.select_acting_on_behalf(myself=False)
         await asyncio.sleep(1)
+        await self._human.maybe_act_form()
         
         # Select legal relationship: "Müşteri (ör. avukat veya başka bir yetkili temsilciyim)"
         await self.select_legal_relationship("Müşteri (ör. avukat veya başka bir yetkili temsilciyim)")
         await asyncio.sleep(1)
+        await self._human.maybe_act_form()
         
         # Fill customer name with business name
         await self.fill_customer_name(business.name)
         await asyncio.sleep(0.5)
+        await self._human.maybe_act_form()
         
         # NOT clicking on "Bu gönderim, yorum dışında bir konuyla mı ilgili?" checkbox
         # We leave it unchecked/untouched
@@ -1255,19 +1279,23 @@ class ReportFiller:
         
         # Prepare unique random reasons for each URL
         random_reasons = self._get_random_reasons(len(urls_to_fill))
+        self.last_filled_reasons = list(random_reasons)
         
         # Fill multiple URLs and their corresponding reasons
         filled_count = await self.fill_multiple_urls(urls_to_fill, reasons=random_reasons)
         await asyncio.sleep(1)
+        await self._human.maybe_act_form()
         
         # Check confirmation checkbox
         print("  Filling confirmation section...")
         await self.check_confirmation_checkbox()
         await asyncio.sleep(0.5)
+        await self._human.maybe_act_form()
         
         # Fill signature field
         await self.fill_signature(legal_name)
         await asyncio.sleep(0.5)
+        await self._human.maybe_act_form()
         
         # Print summary for user
         print("\n" + "="*60)
@@ -1355,7 +1383,8 @@ async def fill_report_form(
     wait_for_captcha: bool = True,
     google_email: str = None,
     google_password: str = None,
-    use_real_chrome: bool = True
+    use_real_chrome: bool = True,
+    humanize: bool = False
 ) -> bool:
     """
     Convenience function to fill the report form.
@@ -1364,7 +1393,8 @@ async def fill_report_form(
         headless=headless,
         google_email=google_email,
         google_password=google_password,
-        use_real_chrome=use_real_chrome
+        use_real_chrome=use_real_chrome,
+        humanize=humanize
     ) as filler:
         success = await filler.fill_form(business, review, report_reason, additional_info)
         
